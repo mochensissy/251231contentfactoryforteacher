@@ -1,0 +1,96 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 分析任务表
+model AnalysisTask {
+  id              Int       @id @default(autoincrement())
+  keyword         String
+  status          String    @default("pending") // pending/processing/completed
+  totalArticles   Int?      @map("total_articles")
+  analyzedAt      DateTime? @map("analyzed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  report          InsightReport?
+
+  @@map("analysis_tasks")
+}
+
+// 洞察报告表
+model InsightReport {
+  id                      Int       @id @default(autoincrement())
+  taskId                  Int       @unique @map("task_id")
+
+  // 基础分析数据
+  topLikesArticles        String    @map("top_likes_articles") // JSON格式
+  topEngagementArticles   String    @map("top_engagement_articles") // JSON格式
+  wordCloud               String    @map("word_cloud") // JSON格式
+  insights                String    // JSON格式 - 基础洞察（向后兼容）
+
+  // 完整原始数据
+  rawArticles             String    @map("raw_articles") // JSON格式 - 完整文章数据
+
+  // AI增强数据（新增）
+  articleSummaries        String?   @map("article_summaries") // JSON格式 - 文章摘要
+  enhancedInsights        String?   @map("enhanced_insights") // JSON格式 - 增强洞察
+
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  task                    AnalysisTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  articles                Article[]
+
+  @@map("insight_reports")
+}
+
+// 文章表
+model Article {
+  id              Int       @id @default(autoincrement())
+  title           String
+  content         String
+  summary         String?
+  source          String    @default("ai_generated") // ai_generated/imported
+  status          String    @default("draft") // draft/pending_review/published
+  images          String?   // JSON格式
+  reportId        Int?      @map("report_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  report          InsightReport? @relation(fields: [reportId], references: [id])
+  publishRecords  PublishRecord[]
+
+  @@map("articles")
+}
+
+// 发布记录表
+model PublishRecord {
+  id              Int       @id @default(autoincrement())
+  articleId       Int       @map("article_id")
+  platform        String    // xiaohongshu/wechat
+  platformId      String?   @map("platform_id")
+  status          String    @default("pending") // pending/success/failed
+  errorMessage    String?   @map("error_message")
+  publishedAt     DateTime? @map("published_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  article         Article   @relation(fields: [articleId], references: [id])
+
+  @@map("publish_records")
+}
+
+// 系统配置表
+model Setting {
+  id              Int       @id @default(autoincrement())
+  key             String    @unique
+  value           String?
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("settings")
+}

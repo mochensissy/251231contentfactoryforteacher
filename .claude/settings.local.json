@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest content-factory-agent --typescript --tailwind --app --no-src-dir --import-alias \"@/*\")",
+      "Bash(npx prisma init:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx prisma db push)",
+      "Bash(cat:*)",
+      "Bash(npx shadcn@latest init -d)",
+      "Bash(npx shadcn@latest init)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npm run dev:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill -9)",
+      "Bash(chmod:*)",
+      "Bash(curl:*)",
+      "Bash(node test-api-direct.js:*)",
+      "Bash(./test-ai-analysis.sh:*)",
+      "Bash(./verify-persistence.sh)",
+      "Bash(../verify-persistence.sh)",
+      "Bash(./test-history-api.sh:*)",
+      "Bash(/Users/hubai/Documents/AI提效项目开发/251106内容工厂Agent/test-history-api.sh)",
+      "Bash(sqlite3:*)",
+      "Bash(kill:*)",
+      "Bash(node test-image-generation.js:*)",
+      "Bash(pkill:*)",
+      "Bash(./test-account-history.sh:*)",
+      "Bash(xargs ps:*)",
+      "Bash(npx tsc:*)",
+      "Bash(rm:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
