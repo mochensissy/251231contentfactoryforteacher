@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,7 +8,19 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
-import { Settings, Key, Link as LinkIcon, Save, Download, Upload, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Settings, Key, Link as LinkIcon, Save, Download, Upload, CheckCircle2, XCircle, Loader2, Plus, Trash2 } from "lucide-react"
+import { FORMATTING_STYLE_PRESETS, WRITING_TONE_PRESETS, FormattingStyleKey, WritingToneKey } from "@/lib/prompt-presets"
+
+// 微信公众号账号配置接口
+interface WechatAccount {
+  id: string
+  name: string
+  webhookUrl: string
+  appId: string
+  appSecret: string
+  enabled: boolean
+}
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error'
 
@@ -22,10 +34,93 @@ export default function SettingsPage() {
   const [serverIp, setServerIp] = useState<string>('')
   const [loadingIp, setLoadingIp] = useState(false)
 
+  // 多公众号配置状态
+  const [wechatAccounts, setWechatAccounts] = useState<WechatAccount[]>([])
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null)
+  const [testStatusMap, setTestStatusMap] = useState<Record<string, TestStatus>>({})
+
+  // 排版风格状态
+  const [selectedFormattingStyle, setSelectedFormattingStyle] = useState<'ochre' | 'blue' | 'monochrome' | 'green'>('ochre')
+
+  // 文风状态
+  const [selectedWritingTone, setSelectedWritingTone] = useState<'professional' | 'casual' | 'storytelling' | 'tutorial'>('professional')
+
+  // 最大公众号数量
+
+  const MAX_ACCOUNTS = 5
+
+  // 从localStorage加载配置
+  useEffect(() => {
+    const saved = localStorage.getItem('wechat-accounts')
+    if (saved) {
+      try {
+        const accounts = JSON.parse(saved) as WechatAccount[]
+        setWechatAccounts(accounts)
+        if (accounts.length > 0) {
+          setActiveAccountId(accounts[0].id)
+        }
+      } catch (e) {
+        console.error('Failed to load wechat accounts:', e)
+      }
+    }
+  }, [])
+
+  // 保存配置到localStorage
+  const saveAccountsToStorage = (accounts: WechatAccount[]) => {
+    localStorage.setItem('wechat-accounts', JSON.stringify(accounts))
+  }
+
+  // 添加新公众号
+  const addAccount = () => {
+    if (wechatAccounts.length >= MAX_ACCOUNTS) {
+      alert(`最多只能配置${MAX_ACCOUNTS}个公众号`)
+      return
+    }
+    const newAccount: WechatAccount = {
+      id: `account-${Date.now()}`,
+      name: `公众号${wechatAccounts.length + 1}`,
+      webhookUrl: 'https://your-n8n-server.com/webhook/...',
+      appId: 'wx...',
+      appSecret: '',
+      enabled: true,
+    }
+    const updatedAccounts = [...wechatAccounts, newAccount]
+    setWechatAccounts(updatedAccounts)
+    setActiveAccountId(newAccount.id)
+    saveAccountsToStorage(updatedAccounts)
+  }
+
+  // 删除公众号
+  const deleteAccount = (id: string) => {
+    if (!confirm('确定要删除这个公众号配置吗？此操作不可撤销。')) {
+      return
+    }
+    const updatedAccounts = wechatAccounts.filter(a => a.id !== id)
+    setWechatAccounts(updatedAccounts)
+    saveAccountsToStorage(updatedAccounts)
+    // 如果删除的是当前选中的账号，选中第一个
+    if (activeAccountId === id) {
+      setActiveAccountId(updatedAccounts[0]?.id || null)
+    }
+  }
+
+  // 更新公众号配置
+  const updateAccount = (id: string, field: keyof WechatAccount, value: string | boolean) => {
+    const updatedAccounts = wechatAccounts.map(a =>
+      a.id === id ? { ...a, [field]: value } : a
+    )
+    setWechatAccounts(updatedAccounts)
+    saveAccountsToStorage(updatedAccounts)
+  }
+
+  // 获取当前活动的公众号
+  const activeAccount = wechatAccounts.find(a => a.id === activeAccountId)
+
   const handleSave = () => {
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
+
 
   // 获取服务器IP地址
   const getServerIp = async () => {
@@ -37,14 +132,14 @@ export default function SettingsPage() {
         'https://api.ip.sb/ip',
         'https://ifconfig.me/ip',
       ]
-      
+
       for (const service of services) {
         try {
           const response = await fetch(service)
           if (response.ok) {
             const data = await response.text()
             let ip = data.trim()
-            
+
             // 如果是JSON格式
             try {
               const json = JSON.parse(data)
@@ -52,9 +147,9 @@ export default function SettingsPage() {
             } catch (e) {
               // 不是JSON，直接使用文本
             }
-            
+
             setServerIp(ip)
-            
+
             // 复制到剪贴板
             await navigator.clipboard.writeText(ip)
             alert(`✅ IP地址已获取并复制到剪贴板：\n\n${ip}\n\n请将此IP添加到微信公众号后台的IP白名单中`)
@@ -65,7 +160,7 @@ export default function SettingsPage() {
           continue
         }
       }
-      
+
       if (!serverIp) {
         alert('❌ 获取IP失败，请手动访问 https://api.ipify.org 查看')
       }
@@ -210,7 +305,7 @@ export default function SettingsPage() {
     setWechatMpTestStatus('testing')
     try {
       const apiUrl = (document.getElementById('mp-api-url') as HTMLInputElement)?.value
-      
+
       if (!apiUrl) {
         setWechatMpTestStatus('error')
         setTimeout(() => setWechatMpTestStatus('idle'), 3000)
@@ -327,55 +422,55 @@ export default function SettingsPage() {
         reader.onload = (event) => {
           try {
             const config = JSON.parse(event.target?.result as string)
-            
+
             // 导入AI配置
             if (config.ai) {
-              ;(document.getElementById('ai-api-url') as HTMLInputElement).value = config.ai.apiUrl || ''
-              ;(document.getElementById('ai-api-key') as HTMLInputElement).value = config.ai.apiKey || ''
-              ;(document.getElementById('ai-model') as HTMLInputElement).value = config.ai.model || ''
+              ; (document.getElementById('ai-api-url') as HTMLInputElement).value = config.ai.apiUrl || ''
+                ; (document.getElementById('ai-api-key') as HTMLInputElement).value = config.ai.apiKey || ''
+                ; (document.getElementById('ai-model') as HTMLInputElement).value = config.ai.model || ''
             }
-            
+
             // 导入公众号文章API配置
             if (config.wechatArticles) {
-              ;(document.getElementById('wechat-api-url') as HTMLInputElement).value = config.wechatArticles.apiUrl || ''
-              ;(document.getElementById('wechat-api-key') as HTMLInputElement).value = config.wechatArticles.apiKey || ''
+              ; (document.getElementById('wechat-api-url') as HTMLInputElement).value = config.wechatArticles.apiUrl || ''
+                ; (document.getElementById('wechat-api-key') as HTMLInputElement).value = config.wechatArticles.apiKey || ''
             }
-            
+
             // 导入硅基流动配置
             if (config.siliconflow) {
-              ;(document.getElementById('siliconflow-api-url') as HTMLInputElement).value = config.siliconflow.apiUrl || ''
-              ;(document.getElementById('siliconflow-api-key') as HTMLInputElement).value = config.siliconflow.apiKey || ''
-              ;(document.getElementById('siliconflow-model') as HTMLInputElement).value = config.siliconflow.model || ''
+              ; (document.getElementById('siliconflow-api-url') as HTMLInputElement).value = config.siliconflow.apiUrl || ''
+                ; (document.getElementById('siliconflow-api-key') as HTMLInputElement).value = config.siliconflow.apiKey || ''
+                ; (document.getElementById('siliconflow-model') as HTMLInputElement).value = config.siliconflow.model || ''
             }
-            
+
             // 导入阿里云通义万相配置
             if (config.dashscope) {
-              ;(document.getElementById('dashscope-api-url') as HTMLInputElement).value = config.dashscope.apiUrl || ''
-              ;(document.getElementById('dashscope-api-key') as HTMLInputElement).value = config.dashscope.apiKey || ''
+              ; (document.getElementById('dashscope-api-url') as HTMLInputElement).value = config.dashscope.apiUrl || ''
+                ; (document.getElementById('dashscope-api-key') as HTMLInputElement).value = config.dashscope.apiKey || ''
             }
-            
+
             // 导入公众号配置
             if (config.wechatMp) {
-              ;(document.getElementById('mp-api-url') as HTMLInputElement).value = config.wechatMp.apiUrl || ''
-              ;(document.getElementById('mp-appid') as HTMLInputElement).value = config.wechatMp.appId || ''
-              ;(document.getElementById('mp-secret') as HTMLInputElement).value = config.wechatMp.appSecret || ''
+              ; (document.getElementById('mp-api-url') as HTMLInputElement).value = config.wechatMp.apiUrl || ''
+                ; (document.getElementById('mp-appid') as HTMLInputElement).value = config.wechatMp.appId || ''
+                ; (document.getElementById('mp-secret') as HTMLInputElement).value = config.wechatMp.appSecret || ''
             }
-            
+
             // 导入提示词配置
             if (config.prompts) {
-              ;(document.getElementById('article-prompt') as HTMLTextAreaElement).value = config.prompts.article || ''
-              ;(document.getElementById('formatting-prompt') as HTMLTextAreaElement).value = config.prompts.formatting || ''
+              ; (document.getElementById('article-prompt') as HTMLTextAreaElement).value = config.prompts.article || ''
+                ; (document.getElementById('formatting-prompt') as HTMLTextAreaElement).value = config.prompts.formatting || ''
             }
-            
+
             // 导入默认设置
             if (config.defaults) {
-              ;(document.getElementById('default-word-count') as HTMLInputElement).value = config.defaults.wordCount || ''
-              ;(document.getElementById('default-style') as HTMLInputElement).value = config.defaults.style || ''
-              ;(document.getElementById('default-images') as HTMLInputElement).value = config.defaults.images || ''
-              ;(document.getElementById('analysis-count') as HTMLInputElement).value = config.defaults.analysisCount || ''
-              ;(document.getElementById('insights-count') as HTMLInputElement).value = config.defaults.insightsCount || ''
+              ; (document.getElementById('default-word-count') as HTMLInputElement).value = config.defaults.wordCount || ''
+                ; (document.getElementById('default-style') as HTMLInputElement).value = config.defaults.style || ''
+                ; (document.getElementById('default-images') as HTMLInputElement).value = config.defaults.images || ''
+                ; (document.getElementById('analysis-count') as HTMLInputElement).value = config.defaults.analysisCount || ''
+                ; (document.getElementById('insights-count') as HTMLInputElement).value = config.defaults.insightsCount || ''
             }
-            
+
             alert('配置导入成功！')
           } catch (error) {
             alert('配置文件格式错误，导入失败')
@@ -616,42 +711,120 @@ export default function SettingsPage() {
         <TabsContent value="platform" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>微信公众号配置</CardTitle>
-              <CardDescription>
-                配置微信公众号发布API（用于自动发布到公众号）
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>微信公众号配置</CardTitle>
+                  <CardDescription>
+                    配置微信公众号发布API（最多支持5个公众号）
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={addAccount}
+                  disabled={wechatAccounts.length >= MAX_ACCOUNTS}
+                  size="sm"
+                  className="flex items-center gap-1"
+                >
+                  <Plus className="h-4 w-4" />
+                  添加公众号
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="mp-api-url">API地址</Label>
-                <Input
-                  id="mp-api-url"
-                  placeholder="https://your-n8n-server.com/webhook/wechat-publish"
-                  defaultValue="https://n8n.aiwensi.com/webhook/publish-to-wechat"
-                />
-                <p className="text-sm text-muted-foreground">
-                  请填写您的n8n服务器webhook地址
-                </p>
-              </div>
+              {/* 公众号账号标签列表 */}
+              {wechatAccounts.length > 0 ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {wechatAccounts.map((account) => (
+                      <button
+                        key={account.id}
+                        onClick={() => setActiveAccountId(account.id)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2 transition-colors ${activeAccountId === account.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                          }`}
+                      >
+                        {account.name}
+                        <span className={`w-2 h-2 rounded-full ${account.enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                      </button>
+                    ))}
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="mp-appid">公众号AppID</Label>
-                <Input
-                  id="mp-appid"
-                  placeholder="wx..."
-                  defaultValue="wx2da3d685de860b66"
-                />
-              </div>
+                  {/* 当前选中账号的配置表单 */}
+                  {activeAccount && (
+                    <div className="border rounded-lg p-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>账号名称</Label>
+                          <Input
+                            value={activeAccount.name}
+                            onChange={(e) => updateAccount(activeAccount.id, 'name', e.target.value)}
+                            placeholder="公众号名称"
+                          />
+                        </div>
+                        <div className="space-y-2 flex items-end">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`enabled-${activeAccount.id}`}
+                              checked={activeAccount.enabled}
+                              onCheckedChange={(checked: boolean | 'indeterminate') => updateAccount(activeAccount.id, 'enabled', !!checked)}
+                            />
+                            <Label htmlFor={`enabled-${activeAccount.id}`}>启用</Label>
+                          </div>
+                        </div>
+                      </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="mp-secret">公众号AppSecret</Label>
-                <Input
-                  id="mp-secret"
-                  type="password"
-                  placeholder="请输入AppSecret"
-                  defaultValue="53d963db6d28a23b51ba9ebdc97f2b44"
-                />
-              </div>
+                      <div className="space-y-2">
+                        <Label>Webhook地址</Label>
+                        <Input
+                          value={activeAccount.webhookUrl}
+                          onChange={(e) => updateAccount(activeAccount.id, 'webhookUrl', e.target.value)}
+                          placeholder="https://your-n8n-server.com/webhook/..."
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          n8n服务器webhook地址
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>公众号AppID</Label>
+                          <Input
+                            value={activeAccount.appId}
+                            onChange={(e) => updateAccount(activeAccount.id, 'appId', e.target.value)}
+                            placeholder="wx..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>公众号AppSecret</Label>
+                          <Input
+                            type="password"
+                            value={activeAccount.appSecret}
+                            onChange={(e) => updateAccount(activeAccount.id, 'appSecret', e.target.value)}
+                            placeholder="••••••••"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 删除按钮 */}
+                      <div className="pt-4 flex justify-start">
+                        <Button
+                          variant="destructive"
+                          onClick={() => deleteAccount(activeAccount.id)}
+                          className="flex items-center gap-2 px-4 shadow-sm text-white hover:text-white"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>删除此公众号</span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>还没有配置公众号</p>
+                  <p className="text-sm">点击右上角"添加公众号"按钮开始配置</p>
+                </div>
+              )}
 
               <Separator />
 
@@ -667,7 +840,7 @@ export default function SettingsPage() {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
@@ -685,7 +858,7 @@ export default function SettingsPage() {
                       '📋 获取本机IP地址'
                     )}
                   </Button>
-                  
+
                   {serverIp && (
                     <div className="flex-1 bg-white dark:bg-gray-800 px-3 py-2 rounded border border-yellow-200 dark:border-yellow-700">
                       <code className="text-sm font-mono text-yellow-900 dark:text-yellow-100">
@@ -694,7 +867,7 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-                
+
                 <div className="text-xs text-yellow-600 dark:text-yellow-400 space-y-1">
                   <p>📖 配置步骤：</p>
                   <ol className="list-decimal list-inside space-y-1 ml-2">
@@ -735,39 +908,59 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>文章生成提示词</CardTitle>
               <CardDescription>
-                配置AI生成文章的提示词模板，可根据需要调整生成格式和风格
+                配置AI生成文章的提示词模板，可选择不同文风或自定义修改
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* 文风选择标签 */}
               <div className="space-y-2">
-                <Label htmlFor="article-prompt">提示词模板</Label>
+                <Label>选择文风</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(WRITING_TONE_PRESETS) as WritingToneKey[]).map((key) => {
+                    const preset = WRITING_TONE_PRESETS[key]
+                    const isSelected = selectedWritingTone === key
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSelectedWritingTone(key)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
+                          ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
+                          : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
+                          }`}
+                      >
+                        {preset.emoji} {preset.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {WRITING_TONE_PRESETS[selectedWritingTone].description}
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="article-prompt">提示词模板（{WRITING_TONE_PRESETS[selectedWritingTone].name}风格）</Label>
+                  <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
+                </div>
                 <Textarea
                   id="article-prompt"
-                  rows={12}
+                  rows={15}
                   placeholder="输入文章生成提示词..."
-                  defaultValue={`你是一位专业的内容创作者。请根据以下要求创作一篇高质量的文章。
-
-选题标题：{topic}
-选题描述：{description}
-建议大纲：{outline}
-
-写作要求：
-1. 字数范围：{wordCount}字
-2. 写作风格：{style}
-3. 文章格式：Markdown格式
-4. 需要插入 {imageCount} 张配图占位符（使用 ![描述](IMAGE_PLACEHOLDER_X) 格式，X为序号）
-
-文章结构要求：
-- 开头：吸引人的引入，说明文章价值
-- 主体：清晰的层次结构，使用二级、三级标题
-- 结尾：总结要点，给出可行建议
-- 配图：在合适的位置插入配图占位符
-
-请直接输出Markdown格式的文章内容，不要有其他说明。`}
+                  value={WRITING_TONE_PRESETS[selectedWritingTone].prompt}
+                  onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
                 />
-                <p className="text-sm text-muted-foreground">
-                  提示：使用 {'{'}topic{'}'}, {'{'}description{'}'}, {'{'}outline{'}'}, {'{'}wordCount{'}'}, {'{'}style{'}'}, {'{'}imageCount{'}'} 作为变量占位符
-                </p>
+                <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                  <span className="text-blue-500">💡</span>
+                  <div className="text-sm text-blue-700 dark:text-blue-300">
+                    <p className="font-medium">自定义提示</p>
+                    <p>切换文风会加载对应的预设提示词。您可以在此基础上自行修改，修改后的内容会在切换风格时被重置。</p>
+                    <p className="mt-1">变量占位符：{'{'}topic{'}'}, {'{'}description{'}'}, {'{'}outline{'}'}, {'{'}wordCount{'}'}, {'{'}style{'}'}, {'{'}imageCount{'}'}</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -776,115 +969,226 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>文章排版提示词</CardTitle>
               <CardDescription>
-                配置微信公众号文章排版的提示词模板，控制HTML输出格式和样式
+                配置微信公众号文章排版的提示词模板，可选择不同的配色风格
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 风格选择标签 */}
+              <div className="space-y-2">
+                <Label>选择排版风格</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(FORMATTING_STYLE_PRESETS) as FormattingStyleKey[]).map((key) => {
+                    const preset = FORMATTING_STYLE_PRESETS[key]
+                    const isSelected = selectedFormattingStyle === key
+                    // 根据风格设置不同的按钮样式
+                    const styleClasses = {
+                      ochre: isSelected
+                        ? 'bg-amber-100 text-amber-800 border-2 border-amber-500'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:border-amber-400',
+                      blue: isSelected
+                        ? 'bg-blue-100 text-blue-800 border-2 border-blue-500'
+                        : 'bg-blue-50 text-blue-700 border border-blue-200 hover:border-blue-400',
+                      monochrome: isSelected
+                        ? 'bg-gray-200 text-gray-900 border-2 border-gray-600'
+                        : 'bg-gray-50 text-gray-700 border border-gray-200 hover:border-gray-400',
+                      green: isSelected
+                        ? 'bg-green-100 text-green-800 border-2 border-green-500'
+                        : 'bg-green-50 text-green-700 border border-green-200 hover:border-green-400',
+                    }
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSelectedFormattingStyle(key)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${styleClasses[key]}`}
+                      >
+                        {preset.emoji} {preset.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {FORMATTING_STYLE_PRESETS[selectedFormattingStyle].description}
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="formatting-prompt">
+                    排版提示词模板（
+                    <span style={{ color: FORMATTING_STYLE_PRESETS[selectedFormattingStyle].primaryColor }}>
+                      {FORMATTING_STYLE_PRESETS[selectedFormattingStyle].name}
+                    </span>
+                    风格）
+                  </Label>
+                  <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
+                </div>
+                <Textarea
+                  id="formatting-prompt"
+                  rows={18}
+                  placeholder="输入排版提示词..."
+                  value={FORMATTING_STYLE_PRESETS[selectedFormattingStyle].prompt}
+                  onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
+                />
+                <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 rounded-lg">
+                  <span className="text-amber-500">💡</span>
+                  <div className="text-sm text-amber-700 dark:text-amber-300">
+                    <p className="font-medium">自定义提示</p>
+                    <p>每种风格都有预设的配色方案和排版规则。切换风格会加载对应的预设。您可以在此基础上自行调整。</p>
+                    <p className="mt-1">变量占位符：{'{'}title{'}'}, {'{'}content{'}'}</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 视频脚本提示词 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>视频脚本提示词</CardTitle>
+              <CardDescription>
+                配置AI生成视频脚本的提示词模板，控制脚本格式和风格
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="formatting-prompt">排版提示词模板</Label>
+                <Label htmlFor="video-script-prompt">视频脚本提示词模板</Label>
                 <Textarea
-                  id="formatting-prompt"
-                  rows={20}
-                  placeholder="输入排版提示词..."
-                  defaultValue={`你是一个专门为微信公众号文章排版AI助手。你的唯一任务是接收用户输入并排版，并输出一个包含标题、HTML内容和图像提示词的JSON对象。你的所有输出，都必须严格遵循指定的JSON格式，绝不能包含任何额外的文字、解释或代码标记。
+                  id="video-script-prompt"
+                  rows={15}
+                  placeholder="输入视频脚本生成提示词..."
+                  defaultValue={`你是一位专业的短视频脚本创作者。请根据以下要求创作一个高质量的视频脚本。
 
-现在，请扮演一位顶级的微信公众号新媒体主编和专业的视觉艺术总监，根据用户提供的[文章内容]，完成以下任务，并将结果填入JSON对象的相应字段中：
+选题标题：{topic}
+选题描述：{description}
+视频时长：{duration}秒
 
-1. **主标题**：文章开头的主标题就使用推送过来的标题即可。
-2. **排版**：
-   * **格式排版**：**在不删减任何已生成内容的前提下**，你必须对全文进行精细的HTML排版，严格遵循下方的【排版风格指南】。
-3. **生成图像提示词**：严格遵循下方的【图像提示词生成指南】，为文章创作一个风格专业、高度契合文章主题的AI绘画图像提示词。
-4. 不要自主发挥，给你什么文章，只需要排版就行。
+脚本格式要求：
+1. **开场钩子**（前3秒）：用一句话抓住观众注意力
+2. **问题引入**（5-10秒）：引出观众痛点或好奇心
+3. **核心内容**（主体部分）：分点阐述，每点配合画面描述
+4. **总结升华**（结尾）：总结要点，引导互动
 
+输出格式：
 ---
-### 【排版风格指南】
+【开场钩子】
+旁白：...
+画面：...
 
-你必须将以下所有规则视为铁律，严格执行，以打造专业、清晰、高度可读的移动端阅读体验：
+【问题引入】
+旁白：...
+画面：...
 
-1. **整体容器**:
-   style="max-width: 680px; margin: 20px auto; padding: 30px; color: #3f3f3f; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif; letter-spacing: 0.5px; line-height: 1.8;"
+【核心内容-第1点】
+旁白：...
+画面：...
 
-2. **小标题 (H2)**:
-   * **小标题前面绝不能出现任何表情符号。**
-   * **【赭黄色】** 小标题的CSS样式必须为:
-   style="font-size: 18px; font-weight: bold; color: #C08B40; text-align: center; margin-top: 45px; margin-bottom: 25px;"
+【核心内容-第2点】
+旁白：...
+画面：...
 
-3. **段落 (P)**:
-   * **(短段落铁律)** **每个段落严格限制在 1-2 句话。严禁出现任何超过3句话的长段落。**
-   * style="margin-bottom: 20px; font-size: 15px;"
-
-4. **重点强调 (Strong)**:
-   * **【赭黄色】** 必须为 <strong> 标签添加内联样式: style="color: #C08B40; font-weight: 600;"
-
-5. **引用/要点总结 (Blockquote)**:
-   * **【新增样式】** 当需要引用名言或总结要点时，必须使用 <blockquote> 标签。
-   * **【赭黄色】** <blockquote> 的CSS样式必须为:
-   style="border-left: 4px solid #C08B40; background-color: #F8F8F8; padding: 15px 20px; margin: 30px 0; color: #555555; font-style: italic;"
-
+【总结升华】
+旁白：...
+画面：...
 ---
-### 【图像提示词生成指南】
 
-1. **核心风格**: 必须采用现代的、写实或半写实的企业/商业/咨询公司专业摄影风格
-2. **概念与隐喻**: 禁止字面化表达，必须使用隐喻
-3. **氛围与色调**: 氛围必须是专业、理性、积极向上、沉稳的
-4. **构图与细节**: 构图必须简洁、大气
-5. **负面指令**: 绝对禁止生成任何诡异、阴暗、恐怖、幼稚、卡通的元素，不要出现人物图像
-6. 提示词应该基于文章内容生成，不要看起来没有关联。
-
----
-[文章内容开始]
-标题: {title}
-
-{content}
-[文章内容结束]
-
-请直接返回JSON格式的结果，格式如下：
-{
-  "title": "文章标题",
-  "html_content": "<div>排版好的HTML内容</div>",
-  "prompt": "图像生成提示词"
-}`}
+注意事项：
+- 语言口语化，避免书面语
+- 每句话控制在15字以内，方便配音
+- 画面描述要具体，便于拍摄或剪辑
+- 适当加入互动引导（点赞、关注、评论）`}
                 />
                 <p className="text-sm text-muted-foreground">
-                  提示：使用 {'{'}title{'}'}, {'{'}content{'}'} 作为变量占位符
+                  提示：使用 {'{'}topic{'}'}, {'{'}description{'}'}, {'{'}duration{'}'} 作为变量占位符
                 </p>
               </div>
             </CardContent>
           </Card>
 
+          {/* 公众号封面图提示词 */}
           <Card>
             <CardHeader>
-              <CardTitle>内容创作默认设置</CardTitle>
+              <CardTitle>🖼️ 公众号封面图提示词</CardTitle>
               <CardDescription>
-                设置AI创作的默认参数
+                配置AI生成公众号文章封面图的提示词模板，控制封面风格和要求
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="default-word-count">默认文章长度</Label>
-                <Input
-                  id="default-word-count"
-                  defaultValue="1000-1500"
-                />
-              </div>
+                <Label htmlFor="cover-image-prompt">封面图提示词模板</Label>
+                <Textarea
+                  id="cover-image-prompt"
+                  rows={12}
+                  placeholder="输入封面图生成提示词..."
+                  defaultValue={`封面要求（务必遵循）：
+1) 核心主题：封面必须围绕"{title}"，体现与文章主题直接相关的场景/物件/动作，不能是泛化风景。
+2) 具体元素：优先加入与主题直连的事物（产品/工具/人物行为/职场或业务场景），避免无关建筑与自然风光。
+3) 风格：保持水彩或插画风格，画面简洁专业。
+4) 禁止：纯风景、度假/旅游/山水/公园/海边/城市天际线等无关画面；禁止幼稚卡通。
+5) 色调：现代、清爽、积极，突出主题。
 
-              <div className="space-y-2">
-                <Label htmlFor="default-style">默认写作风格</Label>
-                <Input
-                  id="default-style"
-                  defaultValue="专业严谨"
+图像风格指南：
+- 采用现代的、写实或半写实的企业/商业/咨询公司专业摄影风格
+- 禁止字面化表达，必须使用隐喻
+- 氛围必须是专业、理性、积极向上、沉稳的
+- 构图必须简洁、大气
+- 绝对禁止生成任何诡异、阴暗、恐怖、幼稚、卡通的元素
+- 不要出现人物图像`}
                 />
+                <div className="flex items-start gap-2 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
+                  <span className="text-purple-500">💡</span>
+                  <div className="text-sm text-purple-700 dark:text-purple-300">
+                    <p className="font-medium">自定义提示</p>
+                    <p>封面图会在发布到公众号时自动生成。此提示词用于控制封面的整体风格和主题关联度。</p>
+                    <p className="mt-1">变量占位符：{'{'}title{'}'} - 文章标题</p>
+                  </div>
+                </div>
               </div>
+            </CardContent>
+          </Card>
 
+          {/* 文章配图提示词 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>🎨 文章配图提示词</CardTitle>
+              <CardDescription>
+                配置AI生成文章内部配图的提示词模板，控制配图风格和要求
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="default-images">默认配图数量</Label>
-                <Input
-                  id="default-images"
-                  type="number"
-                  defaultValue="3"
-                  min="0"
-                  max="10"
+                <Label htmlFor="article-image-prompt">配图提示词模板</Label>
+                <Textarea
+                  id="article-image-prompt"
+                  rows={12}
+                  placeholder="输入配图生成提示词..."
+                  defaultValue={`你是一位专业的视觉设计师。请根据以下文章内容，生成配图的中文提示词。
+
+要求：
+1. 每张配图的提示词应该对应文章的不同部分或关键内容
+2. 提示词要具体、生动，能够准确描述画面内容
+3. 提示词应该使用中文，便于AI图像生成
+4. 提示词长度控制在50字以内
+5. 图片风格应该符合文章主题（专业、清新、科技感等）
+6. 避免过于抽象的概念，要描述具体的视觉元素
+
+风格指南：
+- 保持与文章主题高度相关
+- 画面简洁大气，避免杂乱
+- 色彩和谐，符合专业调性
+- 可以使用适当的视觉隐喻
+- 避免过于幼稚或卡通的风格`}
                 />
+                <div className="flex items-start gap-2 p-3 bg-green-50 dark:bg-green-950 rounded-lg">
+                  <span className="text-green-500">💡</span>
+                  <div className="text-sm text-green-700 dark:text-green-300">
+                    <p className="font-medium">自定义提示</p>
+                    <p>配图会在内容创作时根据文章内容自动生成。此提示词用于指导AI如何根据文章内容生成匹配的配图提示词。</p>
+                    <p className="mt-1">配图数量可在内容创作页面单独设置（0-5张）</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

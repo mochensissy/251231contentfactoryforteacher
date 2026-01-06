@@ -276,7 +276,7 @@ export default function PublishManagementPage() {
 
   // 编辑文章
   const handleEdit = (articleId: number) => {
-    router.push(`/article-edit?id=${articleId}`)
+    router.push(`/content-creation?articleId=${articleId}&mode=manual`)
   }
 
   // 复制文章
@@ -423,9 +423,9 @@ export default function PublishManagementPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">发布管理</h1>
+        <h1 className="text-3xl font-bold tracking-tight">文章库</h1>
         <p className="text-muted-foreground mt-2">
-          管理所有文章，发布到微信公众号和小红书
+          管理所有文章，支持发布到微信公众号和小红书
         </p>
       </div>
 
@@ -455,7 +455,7 @@ export default function PublishManagementPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={() => router.push('/article-new')}>
+            <Button onClick={() => router.push('/content-creation?mode=manual')}>
               <Plus className="mr-2 h-4 w-4" />
               新建文章
             </Button>

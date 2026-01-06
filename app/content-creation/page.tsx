@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo, type KeyboardEvent } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -16,8 +17,10 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Wand2, RefreshCw, Save, Search, Filter, ChevronDown, ChevronUp } from "lucide-react"
+import { Wand2, RefreshCw, Save, Search, ChevronDown, ChevronUp, Send, Loader2, PenLine, Sparkles } from "lucide-react"
+import { marked } from "marked"
 import type { EnhancedInsight } from "@/lib/types"
+import { getEnabledWechatAccounts, type WechatAccount } from "@/lib/wechat-accounts"
 
 interface AnalysisTask {
   id: number
@@ -29,7 +32,51 @@ interface AnalysisTask {
   }
 }
 
+type ArticleStatus = "draft" | "pending_review" | "published"
+
+const statusConfig: Record<ArticleStatus, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  draft: { label: "草稿", variant: "outline" },
+  pending_review: { label: "待审核", variant: "secondary" },
+  published: { label: "已发布", variant: "default" },
+}
+
+// 公众号样式的CSS
+const WECHAT_STYLE = `
+  <style>
+    .wechat-article {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.75;
+      color: #333;
+      background: #fff;
+      padding: 20px;
+    }
+    .wechat-article h1 { font-size: 24px; font-weight: bold; margin: 20px 0 10px; }
+    .wechat-article h2 { font-size: 22px; font-weight: bold; margin: 18px 0 10px; }
+    .wechat-article h3 { font-size: 20px; font-weight: bold; margin: 16px 0 10px; }
+    .wechat-article p { margin: 10px 0; text-align: justify; }
+    .wechat-article strong { font-weight: bold; color: #000; }
+    .wechat-article blockquote { border-left: 4px solid #e0e0e0; padding-left: 16px; margin: 16px 0; color: #666; }
+    .wechat-article code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    .wechat-article pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 16px 0; }
+    .wechat-article ul, .wechat-article ol { margin: 10px 0; padding-left: 24px; }
+    .wechat-article li { margin: 6px 0; }
+    .wechat-article img { max-width: 100%; height: auto; display: block; margin: 16px auto; }
+  </style>
+`
+
 export default function ContentCreationPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // 创作模式：ai = AI智能创作，manual = 手动编辑
+  const [creationMode, setCreationMode] = useState<"ai" | "manual">("ai")
+
+  // 编辑模式（从文章库跳转）
+  const [articleId, setArticleId] = useState<number | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+
+  // ========== AI创作相关状态 ==========
   const [source, setSource] = useState<"insight" | "custom">("insight")
   const [isCreating, setIsCreating] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -39,19 +86,12 @@ export default function ContentCreationPage() {
   const [generatedSummary, setGeneratedSummary] = useState<string>("")
   const [generatedImages, setGeneratedImages] = useState<string[]>([])
 
-  // 洞察报告相关状态
+  // 洞察报告相关
   const [analysisTasks, setAnalysisTasks] = useState<AnalysisTask[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null)
   const [availableInsights, setAvailableInsights] = useState<EnhancedInsight[]>([])
   const [selectedInsight, setSelectedInsight] = useState<EnhancedInsight | null>(null)
   const [expandedInsights, setExpandedInsights] = useState<Set<number>>(new Set())
-  const [pendingPrefill, setPendingPrefill] = useState<{
-    taskId: number | null
-    insight?: EnhancedInsight | null
-    insights?: EnhancedInsight[]
-  } | null>(null)
-
-  // UI refs
   const taskSelectRef = useRef<HTMLButtonElement | null>(null)
 
   // 搜索和筛选
@@ -67,48 +107,70 @@ export default function ContentCreationPage() {
   const [customTopic, setCustomTopic] = useState("")
   const [customDesc, setCustomDesc] = useState("")
 
-  // 多轮对话优化
+  // 多轮优化
   const [showOptimization, setShowOptimization] = useState(false)
   const [optimizationRequest, setOptimizationRequest] = useState("")
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [optimizationHistory, setOptimizationHistory] = useState<any[]>([])
 
-  // 加载分析任务列表
+  // ========== 手动编辑相关状态 ==========
+  const [title, setTitle] = useState("")
+  const [content, setContent] = useState("")
+  const [summary, setSummary] = useState("")
+  const [status, setStatus] = useState<ArticleStatus>("draft")
+
+  const [saving, setSaving] = useState(false)
+  // 动态发布状态 - 每个账号一个状态
+  const [publishingMap, setPublishingMap] = useState<Record<string, boolean>>({})
+
+  // 多公众号配置
+  const [wechatAccounts, setWechatAccountsState] = useState<WechatAccount[]>([])
+
+  // 撤销重做
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const historyRef = useRef<string[]>([""])
+  const historyIndexRef = useRef(0)
+
+  // 初始化
   useEffect(() => {
+    // 加载公众号配置
+    const accounts = getEnabledWechatAccounts()
+    setWechatAccountsState(accounts)
+
+    // 检查URL参数
+    const mode = searchParams.get("mode")
+    const editId = searchParams.get("articleId")
+
+    if (mode === "manual") {
+      setCreationMode("manual")
+    }
+
+    if (editId) {
+      setArticleId(parseInt(editId))
+      setIsEditing(true)
+      setCreationMode("manual")
+      loadArticle(parseInt(editId))
+    }
+
+    // 加载分析任务
     loadAnalysisTasks()
-    // 从选题分析页传入的缓存
+
+    // 检查创作缓存
     try {
       const cached = sessionStorage.getItem("content-creation-source")
       if (cached) {
         const parsed = JSON.parse(cached)
         if (parsed.taskId || parsed.insight) {
-          setPendingPrefill({ taskId: parsed.taskId ?? null, insight: parsed.insight, insights: parsed.insights })
-          if (parsed.taskId) {
-            setSelectedTaskId(parsed.taskId)
-          }
+          if (parsed.taskId) setSelectedTaskId(parsed.taskId)
           setSource("insight")
         }
       }
     } catch (err) {
       console.error("读取创作缓存失败:", err)
     }
-  }, [])
+  }, [searchParams])
 
-  const handleTabChange = (v: string) => {
-    setSource(v as "insight" | "custom")
-    if (v === "insight") {
-      // 聚焦到任务下拉，提升可见性
-      setTimeout(() => taskSelectRef.current?.focus(), 50)
-    }
-  }
-
-  // 加载选中任务的洞察
-  useEffect(() => {
-    if (selectedTaskId) {
-      loadTaskInsights(selectedTaskId)
-    }
-  }, [selectedTaskId])
-
+  // 加载分析任务
   const loadAnalysisTasks = async () => {
     try {
       const response = await fetch('/api/analysis-tasks?sortBy=createdAt&sortOrder=desc&limit=50')
@@ -121,278 +183,293 @@ export default function ContentCreationPage() {
     }
   }
 
+  // 加载文章（编辑模式）
+  const loadArticle = async (id: number) => {
+    try {
+      const response = await fetch(`/api/articles/${id}`)
+      const data = await response.json()
+      if (data.success) {
+        setTitle(data.data.title)
+        setContent(data.data.content)
+        setSummary(data.data.summary || "")
+        setStatus(data.data.status)
+        resetHistory(data.data.content)
+      }
+    } catch (error) {
+      console.error('加载文章失败:', error)
+    }
+  }
+
+  // 加载洞察
+  useEffect(() => {
+    if (selectedTaskId) {
+      loadTaskInsights(selectedTaskId)
+    }
+  }, [selectedTaskId])
+
   const loadTaskInsights = async (taskId: number) => {
     try {
       const response = await fetch(`/api/analysis-tasks/${taskId}`)
       const data = await response.json()
-      if (data.success && data.data.report) {
-        const report = data.data.report
-
-        // 优先增强洞察，若缺失则从基础洞察转换
-        let insights: EnhancedInsight[] | undefined = report.enhancedInsights
-        if (!insights || insights.length === 0) {
-          insights = (report.insights || []).map((i: any) => ({
-            title: i.title,
-            description: i.description,
-            category: "洞察",
-            targetAudience: "通用",
-            contentAngle: "",
-            suggestedOutline: [],
-            referenceArticles: [],
-            confidence: 50,
-            reasons: [],
-          }))
-        }
-
-        if (insights) {
-          const sorted = insights.sort((a: any, b: any) => b.confidence - a.confidence)
-          setAvailableInsights(sorted)
-
-          // 预填选中的洞察（从选题分析页传入）
-          if (pendingPrefill?.taskId === taskId) {
-            prefillInsight(sorted, pendingPrefill.insight)
-            setPendingPrefill(null)
-          }
-        }
+      if (data.success && data.data.report?.enhancedInsights) {
+        setAvailableInsights(data.data.report.enhancedInsights)
       }
     } catch (error) {
       console.error('加载洞察失败:', error)
     }
   }
 
-  // 处理无 taskId 场景：直接使用缓存里的洞察列表
-  useEffect(() => {
-    if (pendingPrefill && pendingPrefill.taskId === null && pendingPrefill.insights?.length) {
-      const insights = pendingPrefill.insights
-      setAvailableInsights(insights)
-      prefillInsight(insights, pendingPrefill.insight)
-      setPendingPrefill(null)
+  // ========== 手动编辑相关函数 ==========
+  const resetHistory = (initialValue: string) => {
+    historyRef.current = [initialValue]
+    historyIndexRef.current = 0
+  }
+
+  const pushHistory = (nextValue: string) => {
+    const history = historyRef.current
+    const currentIndex = historyIndexRef.current
+    if (history[currentIndex] === nextValue) return
+    const nextHistory = history.slice(0, currentIndex + 1)
+    nextHistory.push(nextValue)
+    if (nextHistory.length > 200) nextHistory.shift()
+    historyRef.current = nextHistory
+    historyIndexRef.current = nextHistory.length - 1
+  }
+
+  const handleContentChange = (value: string) => {
+    setContent(value)
+    pushHistory(value)
+  }
+
+  const handleUndo = () => {
+    const currentIndex = historyIndexRef.current
+    if (currentIndex > 0) {
+      const newIndex = currentIndex - 1
+      historyIndexRef.current = newIndex
+      setContent(historyRef.current[newIndex])
     }
-  }, [pendingPrefill])
+  }
 
-  const prefillInsight = (insights: EnhancedInsight[], target?: EnhancedInsight | null) => {
-    if (!insights || insights.length === 0) return
-    if (target) {
-      const match = insights.find((i) => i.title === target.title) || insights[0]
-      setSelectedInsight(match || null)
-    } else {
-      setSelectedInsight(insights[0] || null)
+  const handleRedo = () => {
+    const history = historyRef.current
+    const currentIndex = historyIndexRef.current
+    if (currentIndex < history.length - 1) {
+      const newIndex = currentIndex + 1
+      historyIndexRef.current = newIndex
+      setContent(history[newIndex])
     }
-    document.getElementById('creation-params')?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  // 筛选洞察
-  const filteredInsights = availableInsights.filter(insight => {
-    const matchSearch = !searchKeyword ||
-      insight.title.toLowerCase().includes(searchKeyword.toLowerCase()) ||
-      insight.description.toLowerCase().includes(searchKeyword.toLowerCase())
-
-    const matchCategory = categoryFilter === 'all' || insight.category === categoryFilter
-
-    return matchSearch && matchCategory
-  })
-
-  // 获取所有分类
-  const categories = Array.from(new Set(availableInsights.map(i => i.category)))
-
-  const toggleInsightExpand = (index: number) => {
-    setExpandedInsights(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(index)) {
-        newSet.delete(index)
-      } else {
-        newSet.add(index)
-      }
-      return newSet
-    })
+  const handleEditorKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!e.metaKey) return
+    if (e.key.toLowerCase() === 'z') {
+      e.preventDefault()
+      if (e.shiftKey) handleRedo()
+      else handleUndo()
+    }
   }
 
-  const selectInsight = (insight: EnhancedInsight) => {
-    setSelectedInsight(insight)
-    // 自动滚动到创作参数区域
-    document.getElementById('creation-params')?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const handleCreate = async () => {
-    setIsCreating(true)
-    setGeneratedContent(null)
-    setProgress(0)
-    setProgressMessage("正在准备...")
-    setOptimizationHistory([])
-
+  // 预览HTML（手动模式）
+  const previewHtml = useMemo(() => {
     try {
-      // 构建请求参数
-      const topic = source === 'insight' && selectedInsight
-        ? selectedInsight.title
-        : customTopic
-
-      const description = source === 'insight' && selectedInsight
-        ? selectedInsight.description
-        : customDesc
-
-      const outline = source === 'insight' && selectedInsight
-        ? selectedInsight.suggestedOutline
-        : undefined
-
-      if (!topic) {
-        alert('请选择选题或输入自定义标题')
-        setIsCreating(false)
-        return
+      const isMarkdown = content.includes('#') || content.includes('**') || content.includes('- ')
+      if (isMarkdown && !content.includes('<p>') && !content.includes('<div>')) {
+        const html = marked(content) as string
+        return WECHAT_STYLE + `<div class="wechat-article">${html}</div>`
       }
-
-      const imgCount = parseInt(imageCount)
-
-      // 进度模拟
-      setProgress(10)
-      setProgressMessage("正在分析选题...")
-
-      setTimeout(() => {
-        setProgress(20)
-        setProgressMessage("AI正在创作文章内容...")
-      }, 500)
-
-      // 调用AI生成文章
-      const response = await fetch('/api/content-generation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          topic,
-          description,
-          outline,
-          wordCount,
-          style,
-          imageCount: imgCount,
-        }),
-      })
-
-      setProgress(50)
-      setProgressMessage("文章内容已生成...")
-
-      if (imgCount > 0) {
-        setProgress(60)
-        setProgressMessage("正在分析文章内容，生成配图提示词...")
-
-        // 模拟图片生成进度
-        const imageProgressSteps = imgCount
-        const progressPerImage = 30 / imageProgressSteps
-
-        for (let i = 0; i < imageProgressSteps; i++) {
-          setTimeout(() => {
-            setProgress(60 + (i + 1) * progressPerImage)
-            setProgressMessage(`正在生成第 ${i + 1}/${imgCount} 张配图...`)
-          }, 1000 + i * 1000)
-        }
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || '生成失败')
-      }
-
-      const data = await response.json()
-      setProgress(100)
-      setProgressMessage("创作完成！")
-
-      // 显示生成的内容
-      setTimeout(() => {
-        setIsCreating(false)
-        setGeneratedTitle(data.data.title)
-        setGeneratedContent(data.data.content)
-        setGeneratedSummary(data.data.summary)
-        setGeneratedImages(data.data.images || [])
-        setShowOptimization(false)
-      }, 500)
-
+      return WECHAT_STYLE + `<div class="wechat-article">${content}</div>`
     } catch (error) {
-      console.error('生成文章失败:', error)
-      alert(error instanceof Error ? error.message : '生成失败，请重试')
-      setIsCreating(false)
-      setProgress(0)
-      setProgressMessage("")
+      return WECHAT_STYLE + `<div class="wechat-article">${content}</div>`
     }
-  }
+  }, [content])
 
-  const handleOptimize = async () => {
-    if (!generatedContent || !optimizationRequest) {
-      alert('请输入优化要求')
+  // AI生成内容预览HTML
+  const aiPreviewHtml = useMemo(() => {
+    if (!generatedContent) return ''
+    try {
+      const isMarkdown = generatedContent.includes('#') || generatedContent.includes('**') || generatedContent.includes('- ')
+      if (isMarkdown && !generatedContent.includes('<p>') && !generatedContent.includes('<div>')) {
+        const html = marked(generatedContent) as string
+        return WECHAT_STYLE + `<div class="wechat-article">${html}</div>`
+      }
+      return WECHAT_STYLE + `<div class="wechat-article">${generatedContent}</div>`
+    } catch (error) {
+      return WECHAT_STYLE + `<div class="wechat-article">${generatedContent}</div>`
+    }
+  }, [generatedContent])
+
+  // ========== 保存和发布 ==========
+  const handleSaveManual = async () => {
+    if (!title.trim() || !content.trim()) {
+      alert('请输入标题和内容')
       return
     }
 
-    setIsOptimizing(true)
-
+    setSaving(true)
     try {
-      const response = await fetch('/api/articles/0/optimize', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          originalContent: generatedContent,
-          optimizationRequest,
-          conversationHistory: optimizationHistory,
-        }),
+      const url = isEditing ? `/api/articles/${articleId}` : '/api/articles'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, summary: summary || null, status }),
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || '优化失败')
-      }
-
       const data = await response.json()
-
-      // 更新内容
-      setGeneratedContent(data.data.content)
-
-      // 保存对话历史
-      setOptimizationHistory([
-        ...optimizationHistory,
-        {
-          role: 'user',
-          content: `优化要求: ${optimizationRequest}`,
-        },
-        {
-          role: 'assistant',
-          content: `${data.data.explanation}\n\n${data.data.content}`,
-        },
-      ])
-
-      // 清空输入框
-      setOptimizationRequest("")
-
-      alert(`优化完成！${data.data.explanation}`)
-
+      if (response.ok && data.success) {
+        alert('✅ 保存成功')
+        router.push('/publish-management')
+      } else {
+        alert('❌ 保存失败：' + (data.error || '未知错误'))
+      }
     } catch (error) {
-      console.error('优化失败:', error)
-      alert(error instanceof Error ? error.message : '优化失败，请重试')
+      alert('❌ 保存失败')
     } finally {
-      setIsOptimizing(false)
+      setSaving(false)
     }
   }
 
-  const handleSave = async () => {
+  // 手动编辑模式发布（动态账号）
+  const handlePublish = async (account: WechatAccount) => {
+    if (!title.trim() || !content.trim()) {
+      alert('请输入标题和内容')
+      return
+    }
+
+    const confirmed = confirm(`确定要保存并发布到${account.name}公众号吗？`)
+    if (!confirmed) return
+
+    setPublishingMap(prev => ({ ...prev, [account.id]: true }))
+
+    try {
+      // 保存文章
+      const url = isEditing ? `/api/articles/${articleId}` : '/api/articles'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const saveResponse = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, summary: summary || null, status: 'published' }),
+      })
+
+      const saveData = await saveResponse.json()
+      if (!saveResponse.ok || !saveData.success) {
+        alert('❌ 保存失败：' + (saveData.error || '未知错误'))
+        return
+      }
+
+      const savedArticleId = isEditing ? articleId : saveData.data.id
+
+      // 发布到动态账号
+      const publishResponse = await fetch('/api/publish/wechat-generic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: savedArticleId,
+          account: {
+            name: account.name,
+            appId: account.appId,
+            appSecret: account.appSecret,
+            webhookUrl: account.webhookUrl,
+          }
+        }),
+      })
+
+      const publishData = await publishResponse.json()
+      if (publishResponse.ok && publishData.success) {
+        alert('✅ ' + publishData.data.message)
+        router.push('/publish-management')
+      } else {
+        alert('❌ 发布失败：' + (publishData.error || '未知错误'))
+      }
+    } catch (error) {
+      alert('❌ 发布失败')
+    } finally {
+      setPublishingMap(prev => ({ ...prev, [account.id]: false }))
+    }
+  }
+
+  // ========== AI创作 ==========
+  const handleAICreate = async () => {
+    const topic = source === "insight" ? selectedInsight?.title : customTopic
+    if (!topic) {
+      alert("请选择或输入选题")
+      return
+    }
+
+    setIsCreating(true)
+    setProgress(0)
+    setProgressMessage("正在分析选题...")
+
+    try {
+      const progressInterval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 90) { clearInterval(progressInterval); return prev }
+          return prev + 10
+        })
+      }, 500)
+
+      setProgress(20)
+      setProgressMessage("AI正在创作文章...")
+
+      const response = await fetch("/api/content-generation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          description: source === "insight" ? selectedInsight?.description : customDesc,
+          wordCount,
+          style,
+          imageCount: parseInt(imageCount),
+          taskId: selectedTaskId,
+        }),
+      })
+
+      clearInterval(progressInterval)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "生成失败")
+      }
+
+      setProgress(100)
+      setProgressMessage("创作完成！")
+
+      const data = await response.json()
+      setGeneratedTitle(data.data.title)
+      setGeneratedContent(data.data.content)
+      setGeneratedSummary(data.data.summary || "")
+      setGeneratedImages(data.data.images || [])
+
+      setTimeout(() => {
+        setIsCreating(false)
+        setProgress(0)
+      }, 500)
+    } catch (error) {
+      console.error("创作失败:", error)
+      alert(error instanceof Error ? error.message : "创作失败")
+      setIsCreating(false)
+      setProgress(0)
+    }
+  }
+
+  const handleSaveAI = async () => {
     if (!generatedContent || !generatedTitle) {
       alert('没有可保存的内容')
       return
     }
 
+    setSaving(true)
     try {
       const response = await fetch('/api/articles', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: generatedTitle,
           content: generatedContent,
           summary: generatedSummary,
-          wordCount,
-          writeStyle: style,
-          imageCount: parseInt(imageCount),
           images: generatedImages,
-          taskId: selectedTaskId,
-          insightTitle: selectedInsight?.title,
         }),
       })
 
@@ -402,414 +479,511 @@ export default function ContentCreationPage() {
       }
 
       const data = await response.json()
-      alert(`文章已保存！ID: ${data.data.articleId}`)
-
+      alert(`文章已保存！`)
+      router.push('/publish-management')
     } catch (error) {
-      console.error('保存失败:', error)
-      alert(error instanceof Error ? error.message : '保存失败，请重试')
+      alert(error instanceof Error ? error.message : '保存失败')
+    } finally {
+      setSaving(false)
     }
   }
 
+  // AI生成内容发布（动态账号）
+  const handlePublishAI = async (account: WechatAccount) => {
+    if (!generatedContent || !generatedTitle) {
+      alert('没有可发布的内容')
+      return
+    }
+
+    const confirmed = confirm(`确定要保存并发布到${account.name}公众号吗？`)
+    if (!confirmed) return
+
+    setPublishingMap(prev => ({ ...prev, [account.id]: true }))
+
+    try {
+      // 先保存文章
+      const saveResponse = await fetch('/api/articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: generatedTitle,
+          content: generatedContent,
+          summary: generatedSummary,
+          status: 'published',
+        }),
+      })
+
+      const saveData = await saveResponse.json()
+      if (!saveResponse.ok || !saveData.success) {
+        alert('❌ 保存失败：' + (saveData.error || '未知错误'))
+        return
+      }
+
+      const savedArticleId = saveData.data.id
+
+      // 发布到动态账号
+      const publishResponse = await fetch('/api/publish/wechat-generic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: savedArticleId,
+          account: {
+            name: account.name,
+            appId: account.appId,
+            appSecret: account.appSecret,
+            webhookUrl: account.webhookUrl,
+          }
+        }),
+      })
+
+      const publishData = await publishResponse.json()
+      if (publishResponse.ok && publishData.success) {
+        alert('✅ ' + publishData.data.message)
+        router.push('/publish-management')
+      } else {
+        alert('❌ 发布失败：' + (publishData.error || '未知错误'))
+      }
+    } catch (error) {
+      alert('❌ 发布失败')
+    } finally {
+      setPublishingMap(prev => ({ ...prev, [account.id]: false }))
+    }
+  }
+
+  // 切换到手动编辑（从AI生成结果）
+  const switchToManualEdit = () => {
+    setTitle(generatedTitle)
+    setContent(generatedContent || "")
+    setSummary(generatedSummary)
+    setCreationMode("manual")
+    resetHistory(generatedContent || "")
+  }
+
+  // 过滤洞察
+  const filteredInsights = useMemo(() => {
+    let results = availableInsights
+    if (searchKeyword) {
+      results = results.filter((i: EnhancedInsight) =>
+        i.title?.toLowerCase().includes(searchKeyword.toLowerCase()) ||
+        i.suggestedOutline?.some((p: string) => p.toLowerCase().includes(searchKeyword.toLowerCase()))
+      )
+    }
+    if (categoryFilter !== "all") {
+      results = results.filter(i => i.category === categoryFilter)
+    }
+    return results
+  }, [availableInsights, searchKeyword, categoryFilter])
+
+  const categories = useMemo(() => {
+    const cats = new Set(availableInsights.map(i => i.category).filter(Boolean))
+    return Array.from(cats)
+  }, [availableInsights])
+
+  const isWorking = isCreating || saving || Object.values(publishingMap).some(v => v)
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">内容创作</h1>
-        <p className="text-muted-foreground mt-2">
-          AI一键生成高质量文章，支持多轮优化
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">内容创作</h1>
+          <p className="text-muted-foreground mt-2">
+            AI智能创作或手动编辑，支持一键发布到公众号
+          </p>
+        </div>
+        {isEditing && (
+          <Badge variant="secondary">编辑模式 - ID: {articleId}</Badge>
+        )}
       </div>
 
-      {/* 选题来源选择 */}
+      {/* 创作模式切换 */}
       <Card>
         <CardHeader>
-          <CardTitle>选题来源</CardTitle>
-          <CardDescription>
-            选择从洞察报告中选择选题，或自定义输入
-          </CardDescription>
+          <CardTitle>创作方式</CardTitle>
+          <CardDescription>选择AI智能创作或手动编辑</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={source} onValueChange={handleTabChange}>
+          <Tabs value={creationMode} onValueChange={(v) => setCreationMode(v as "ai" | "manual")}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="insight">从洞察报告选择</TabsTrigger>
-              <TabsTrigger value="custom">自定义输入</TabsTrigger>
+              <TabsTrigger value="ai" className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                AI 智能创作
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="flex items-center gap-2">
+                <PenLine className="h-4 w-4" />
+                手动编辑
+              </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="insight" className="space-y-4 mt-4">
-              {/* 关键词选择 */}
-              <div className="space-y-2">
-                <Label>选择关键词分析任务</Label>
-                <Select
-                  value={selectedTaskId?.toString() || ""}
-                  onValueChange={(value) => {
-                    setSelectedTaskId(value ? parseInt(value) : null)
-                    setSelectedInsight(null)
-                    setSearchKeyword("")
-                    setCategoryFilter("all")
-                  }}
-                >
-                  <SelectTrigger ref={taskSelectRef}>
-                    <SelectValue placeholder="请选择一个分析任务..." />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background">
-                    {analysisTasks.length === 0 ? (
-                      <SelectItem value="empty" disabled>暂无分析任务</SelectItem>
-                    ) : (
-                      analysisTasks.map((task) => (
-                        <SelectItem key={task.id} value={task.id.toString()}>
-                          {task.keyword} ({task.totalArticles}篇) - {new Date(task.createdAt).toLocaleDateString()}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 搜索和筛选 */}
-              {selectedTaskId && availableInsights.length > 0 && (
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="搜索选题..."
-                        value={searchKeyword}
-                        onChange={(e) => setSearchKeyword(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-[180px]">
-                      <Filter className="h-4 w-4 mr-2" />
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background">
-                      <SelectItem value="all">所有分类</SelectItem>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {/* 可用选题列表 */}
-              {selectedTaskId && (
-                <div className="space-y-2">
-                  <Label>可用选题 ({filteredInsights.length})</Label>
-                  {filteredInsights.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4 text-center">
-                      {searchKeyword || categoryFilter !== 'all' ? '没有匹配的选题' : '该任务暂无选题洞察'}
-                    </p>
-                  ) : (
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                      {filteredInsights.map((insight, index) => {
-                        const isExpanded = expandedInsights.has(index)
-                        const isSelected = selectedInsight?.title === insight.title
-
-                        return (
-                          <div
-                            key={index}
-                            className={`border rounded-lg p-4 transition-all ${
-                              isSelected ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
-                            }`}
-                          >
-                            {/* 标题行 */}
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-center gap-2 flex-1">
-                                <input
-                                  type="radio"
-                                  name="insight"
-                                  checked={isSelected}
-                                  onChange={() => selectInsight(insight)}
-                                  className="h-4 w-4"
-                                />
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge variant="default">{insight.category}</Badge>
-                                  <h3 className="font-semibold">{insight.title}</h3>
-                                  <Badge variant="secondary">{insight.confidence}%</Badge>
-                                </div>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => toggleInsightExpand(index)}
-                              >
-                                {isExpanded ? (
-                                  <ChevronUp className="h-4 w-4" />
-                                ) : (
-                                  <ChevronDown className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-
-                            {/* 简短描述 */}
-                            <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                              {insight.description}
-                            </p>
-
-                            {/* 展开内容 */}
-                            {isExpanded && (
-                              <div className="space-y-3 pt-3 border-t mt-3">
-                                <div>
-                                  <p className="text-xs font-medium text-muted-foreground mb-1">完整描述</p>
-                                  <p className="text-sm">{insight.description}</p>
-                                </div>
-
-                                {insight.targetAudience && (
-                                  <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">目标受众</p>
-                                    <p className="text-sm">{insight.targetAudience}</p>
-                                  </div>
-                                )}
-
-                                {insight.contentAngle && (
-                                  <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">内容切入角度</p>
-                                    <p className="text-sm">{insight.contentAngle}</p>
-                                  </div>
-                                )}
-
-                                {insight.suggestedOutline && insight.suggestedOutline.length > 0 && (
-                                  <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-2">建议大纲</p>
-                                    <ul className="space-y-1">
-                                      {insight.suggestedOutline.map((point, i) => (
-                                        <li key={i} className="text-sm flex items-start gap-2">
-                                          <span className="text-muted-foreground">{i + 1}.</span>
-                                          <span className="flex-1">{point}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-
-                                {insight.reasons && insight.reasons.length > 0 && (
-                                  <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-2">推荐理由</p>
-                                    <div className="space-y-1">
-                                      {insight.reasons.map((reason, i) => (
-                                        <div key={i} className="flex items-start gap-2">
-                                          <Badge variant="secondary" className="mt-0.5">✓</Badge>
-                                          <p className="text-sm flex-1">{reason}</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="custom" className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label htmlFor="custom-topic">自定义选题/标题</Label>
-                <Input
-                  id="custom-topic"
-                  placeholder="请输入文章主题或标题..."
-                  value={customTopic}
-                  onChange={(e) => setCustomTopic(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="topic-desc">选题描述（可选）</Label>
-                <Textarea
-                  id="topic-desc"
-                  placeholder="描述一下你想要的文章内容、角度、重点等..."
-                  rows={4}
-                  value={customDesc}
-                  onChange={(e) => setCustomDesc(e.target.value)}
-                />
-              </div>
-            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
 
-      {/* 创作参数 */}
-      <Card id="creation-params">
-        <CardHeader>
-          <CardTitle>创作参数</CardTitle>
-          <CardDescription>
-            设置文章的风格、长度等参数
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="word-count">文章长度</Label>
-              <Select value={wordCount} onValueChange={setWordCount}>
-                <SelectTrigger id="word-count">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background">
-                  <SelectItem value="500-800">500-800字（短文）</SelectItem>
-                  <SelectItem value="1000-1500">1000-1500字（中等）</SelectItem>
-                  <SelectItem value="2000-3000">2000-3000字（长文）</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      {/* ========== AI 创作模式 ========== */}
+      {creationMode === "ai" && (
+        <>
+          {/* 选题来源 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>选题来源</CardTitle>
+              <CardDescription>选择从洞察报告中选择选题，或自定义输入</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs value={source} onValueChange={(v) => setSource(v as "insight" | "custom")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="insight">从洞察报告选择</TabsTrigger>
+                  <TabsTrigger value="custom">自定义输入</TabsTrigger>
+                </TabsList>
 
-            <div className="space-y-2">
-              <Label htmlFor="style">写作风格</Label>
-              <Select value={style} onValueChange={setStyle}>
-                <SelectTrigger id="style">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background">
-                  <SelectItem value="professional">专业严谨</SelectItem>
-                  <SelectItem value="casual">轻松活泼</SelectItem>
-                  <SelectItem value="storytelling">故事叙事</SelectItem>
-                  <SelectItem value="tutorial">教程指南</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="images">配图数量</Label>
-              <Select value={imageCount} onValueChange={setImageCount}>
-                <SelectTrigger id="images">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background">
-                  <SelectItem value="0">不插入配图</SelectItem>
-                  <SelectItem value="1">1张</SelectItem>
-                  <SelectItem value="3">3张</SelectItem>
-                  <SelectItem value="5">5张</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 开始创作按钮 */}
-      <div className="flex justify-center">
-        <Button
-          size="lg"
-          onClick={handleCreate}
-          disabled={isCreating}
-          className="w-full md:w-auto"
-        >
-          <Wand2 className="mr-2 h-5 w-5" />
-          开始AI创作
-        </Button>
-      </div>
-
-      {/* 创作进度 */}
-      {isCreating && (
-        <Card>
-          <CardHeader>
-            <CardTitle>创作进度</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Progress value={progress} />
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                <span className="font-medium">{progressMessage}</span>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {progress < 30 && "AI正在理解您的选题需求..."}
-                {progress >= 30 && progress < 60 && "内容创作中，这可能需要几秒钟..."}
-                {progress >= 60 && progress < 90 && "正在使用可灵模型生成高质量配图..."}
-                {progress >= 90 && "即将完成，请稍候..."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* 文章预览 */}
-      {generatedContent && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">文章预览</h2>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowOptimization(!showOptimization)}
-              >
-                {showOptimization ? '隐藏优化' : '优化文章'}
-              </Button>
-              <Button variant="outline" onClick={handleCreate}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                重新生成
-              </Button>
-              <Button variant="default" onClick={handleSave}>
-                <Save className="mr-2 h-4 w-4" />
-                保存文章
-              </Button>
-            </div>
-          </div>
-
-          {/* 多轮对话优化 */}
-          {showOptimization && (
-            <Card>
-              <CardHeader>
-                <CardTitle>文章优化</CardTitle>
-                <CardDescription>
-                  告诉AI你想如何改进这篇文章
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Textarea
-                    placeholder="例如：让开头更吸引人、增加数据支撑、调整语气更轻松..."
-                    rows={3}
-                    value={optimizationRequest}
-                    onChange={(e) => setOptimizationRequest(e.target.value)}
-                  />
-                  <Button
-                    onClick={handleOptimize}
-                    disabled={isOptimizing || !optimizationRequest}
-                  >
-                    {isOptimizing ? '优化中...' : '优化'}
-                  </Button>
-                </div>
-                {optimizationHistory.length > 0 && (
+                <TabsContent value="insight" className="space-y-4 mt-4">
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">优化历史：</p>
-                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                      {optimizationHistory.filter(h => h.role === 'user').map((h, i) => (
-                        <Badge key={i} variant="secondary" className="text-xs">
-                          {h.content}
-                        </Badge>
-                      ))}
-                    </div>
+                    <Label>选择分析任务</Label>
+                    <Select
+                      value={selectedTaskId?.toString() || ""}
+                      onValueChange={(value) => {
+                        setSelectedTaskId(value ? parseInt(value) : null)
+                        setSelectedInsight(null)
+                      }}
+                    >
+                      <SelectTrigger ref={taskSelectRef}>
+                        <SelectValue placeholder="请选择一个分析任务..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background max-h-[300px]">
+                        {analysisTasks.map((task) => (
+                          <SelectItem key={task.id} value={task.id.toString()}>
+                            {task.keyword} ({task.totalArticles}篇)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
+
+                  {availableInsights.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="搜索洞察..."
+                            value={searchKeyword}
+                            onChange={(e) => setSearchKeyword(e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                          <SelectTrigger className="w-[150px]">
+                            <SelectValue placeholder="分类筛选" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background">
+                            <SelectItem value="all">全部分类</SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat} value={cat || ""}>{cat}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {filteredInsights.map((insight, index) => (
+                          <div
+                            key={index}
+                            className={`border rounded-lg p-3 cursor-pointer transition-colors ${selectedInsight === insight ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                              }`}
+                            onClick={() => setSelectedInsight(insight)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{insight.title}</span>
+                                  {insight.category && (
+                                    <Badge variant="outline" className="text-xs">{insight.category}</Badge>
+                                  )}
+                                </div>
+                                {expandedInsights.has(index) && insight.suggestedOutline && (
+                                  <ul className="text-sm text-muted-foreground mt-2 space-y-1">
+                                    {insight.suggestedOutline.slice(0, 3).map((p: string, i: number) => (
+                                      <li key={i}>• {p}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setExpandedInsights((prev) => {
+                                    const next = new Set(prev)
+                                    if (next.has(index)) next.delete(index)
+                                    else next.add(index)
+                                    return next
+                                  })
+                                }}
+                              >
+                                {expandedInsights.has(index) ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="custom" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label>选题标题</Label>
+                    <Input
+                      placeholder="例如：如何用AI提升工作效率"
+                      value={customTopic}
+                      onChange={(e) => setCustomTopic(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>补充说明（可选）</Label>
+                    <Textarea
+                      placeholder="描述你希望文章包含的要点、风格等..."
+                      value={customDesc}
+                      onChange={(e) => setCustomDesc(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+
+          {/* 创作参数 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>创作参数</CardTitle>
+              <CardDescription>设置文章的风格、长度等参数</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>文章长度</Label>
+                  <Select value={wordCount} onValueChange={setWordCount}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="500-800">500-800字（短文）</SelectItem>
+                      <SelectItem value="1000-1500">1000-1500字（中等）</SelectItem>
+                      <SelectItem value="2000-3000">2000-3000字（长文）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>写作风格</Label>
+                  <Select value={style} onValueChange={setStyle}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="professional">专业严谨</SelectItem>
+                      <SelectItem value="casual">轻松活泼</SelectItem>
+                      <SelectItem value="storytelling">故事叙述</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>配图数量</Label>
+                  <Select value={imageCount} onValueChange={setImageCount}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="0">不需要配图</SelectItem>
+                      <SelectItem value="3">3张</SelectItem>
+                      <SelectItem value="5">5张</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-center">
+            <Button
+              size="lg"
+              onClick={handleAICreate}
+              disabled={isCreating || (source === "insight" ? !selectedInsight : !customTopic)}
+            >
+              <Wand2 className="mr-2 h-5 w-5" />
+              {isCreating ? "创作中..." : "开始AI创作"}
+            </Button>
+          </div>
+
+          {/* 创作进度 */}
+          {isCreating && (
+            <Card>
+              <CardHeader><CardTitle>创作进度</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <Progress value={progress} />
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                  <span>{progressMessage}</span>
+                </div>
               </CardContent>
             </Card>
           )}
 
+          {/* AI生成结果 - 编辑/预览/发布 */}
+          {generatedContent && !isCreating && (
+            <div className="space-y-4">
+              {/* 顶部工具栏 */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-bold">编辑与发布</h2>
+                  <Badge variant="secondary">AI生成</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={handleAICreate} disabled={isWorking}>
+                    <RefreshCw className="mr-2 h-4 w-4" />重新生成
+                  </Button>
+                  <Button onClick={handleSaveAI} disabled={isWorking} variant="outline">
+                    {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : <><Save className="mr-2 h-4 w-4" />保存草稿</>}
+                  </Button>
+                  {wechatAccounts.map((account, index) => (
+                    <Button
+                      key={account.id}
+                      onClick={() => handlePublishAI(account)}
+                      disabled={isWorking}
+                      className={index % 2 === 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-teal-600 hover:bg-teal-700"}
+                    >
+                      {publishingMap[account.id] ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</>
+                      ) : (
+                        <><Send className="mr-2 h-4 w-4" />发布到{account.name}</>
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 基本信息 */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>标题</Label>
+                      <Input
+                        value={generatedTitle}
+                        onChange={(e) => setGeneratedTitle(e.target.value)}
+                        placeholder="文章标题"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>摘要</Label>
+                      <Input
+                        value={generatedSummary}
+                        onChange={(e) => setGeneratedSummary(e.target.value)}
+                        placeholder="文章摘要（可选）"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 编辑器和预览 */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="flex flex-col">
+                  <CardHeader className="pb-3"><CardTitle>编辑内容</CardTitle></CardHeader>
+                  <CardContent className="flex-1">
+                    <Textarea
+                      value={generatedContent}
+                      onChange={(e) => setGeneratedContent(e.target.value)}
+                      placeholder="编辑文章内容..."
+                      className="font-mono text-sm w-full resize-none min-h-[600px]"
+                    />
+                  </CardContent>
+                </Card>
+                <Card className="flex flex-col">
+                  <CardHeader className="pb-3"><CardTitle>公众号样式预览</CardTitle></CardHeader>
+                  <CardContent className="flex-1">
+                    <div className="border rounded-lg p-6 bg-white min-h-[600px] overflow-auto">
+                      <div dangerouslySetInnerHTML={{ __html: aiPreviewHtml }} />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ========== 手动编辑模式 ========== */}
+      {creationMode === "manual" && (
+        <>
+          {/* 顶部工具栏 */}
+          <div className="flex items-center justify-between">
+            <Badge variant={statusConfig[status].variant}>{statusConfig[status].label}</Badge>
+            <div className="flex items-center gap-2">
+              <Button onClick={handleSaveManual} disabled={isWorking} variant="outline">
+                {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : <><Save className="mr-2 h-4 w-4" />保存</>}
+              </Button>
+              {wechatAccounts.map((account, index) => (
+                <Button
+                  key={account.id}
+                  onClick={() => handlePublish(account)}
+                  disabled={isWorking}
+                  className={index % 2 === 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-teal-600 hover:bg-teal-700"}
+                >
+                  {publishingMap[account.id] ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</>
+                  ) : (
+                    <><Send className="mr-2 h-4 w-4" />发布到{account.name}</>
+                  )}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* 基本信息 */}
           <Card>
             <CardContent className="pt-6">
-              <div className="prose prose-zinc max-w-none dark:prose-invert">
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: generatedContent
-                      .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-                      .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-                      .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-                      .replace(/^- (.*$)/gm, '<li>$1</li>')
-                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                      .replace(/\n\n/g, '</p><p>')
-                      .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="w-full rounded-lg my-4" />')
-                      .replace(/^(.+)$/gm, '<p>$1</p>')
-                  }}
-                />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>标题</Label>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="请输入文章标题" />
+                </div>
+                <div className="space-y-2">
+                  <Label>摘要</Label>
+                  <Input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="请输入文章摘要（可选）" />
+                </div>
+                <div className="space-y-2">
+                  <Label>状态</Label>
+                  <Select value={status} onValueChange={(v) => setStatus(v as ArticleStatus)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="draft">草稿</SelectItem>
+                      <SelectItem value="pending_review">待审核</SelectItem>
+                      <SelectItem value="published">已发布</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardContent>
           </Card>
-        </div>
+
+          {/* 编辑器和预览 */}
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="flex flex-col">
+              <CardHeader className="pb-3"><CardTitle>编辑内容</CardTitle></CardHeader>
+              <CardContent className="flex-1">
+                <Textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={(e) => handleContentChange(e.target.value)}
+                  onKeyDown={handleEditorKeyDown}
+                  placeholder="请输入文章内容（支持Markdown和HTML）"
+                  className="font-mono text-sm w-full resize-none min-h-[600px]"
+                />
+              </CardContent>
+            </Card>
+            <Card className="flex flex-col">
+              <CardHeader className="pb-3"><CardTitle>公众号样式预览</CardTitle></CardHeader>
+              <CardContent className="flex-1">
+                <div className="border rounded-lg p-6 bg-white min-h-[600px] overflow-auto">
+                  <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
     </div>
   )

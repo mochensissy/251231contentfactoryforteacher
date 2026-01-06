@@ -3,13 +3,14 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { BarChart3, FileEdit, Settings, ListChecks, Home } from "lucide-react"
+import { BarChart3, FileEdit, Settings, FolderOpen, Home, Video } from "lucide-react"
 
 const navigation = [
   { name: "首页", href: "/", icon: Home },
   { name: "选题分析", href: "/topic-analysis", icon: BarChart3 },
   { name: "内容创作", href: "/content-creation", icon: FileEdit },
-  { name: "发布管理", href: "/publish-management", icon: ListChecks },
+  { name: "视频脚本", href: "/video-script", icon: Video },
+  { name: "文章库", href: "/publish-management", icon: FolderOpen },
   { name: "设置", href: "/settings", icon: Settings },
 ]
 

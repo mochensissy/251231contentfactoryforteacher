@@ -65,6 +65,7 @@ model Article {
 
   report          InsightReport? @relation(fields: [reportId], references: [id])
   publishRecords  PublishRecord[]
+  videoScripts    VideoScript[]  // 从本文章生成的视频脚本
 
   @@map("articles")
 }
@@ -94,3 +95,24 @@ model Setting {
 
   @@map("settings")
 }
+
+// 视频脚本表
+model VideoScript {
+  id              Int       @id @default(autoincrement())
+  title           String
+  platform        String    // bilibili / youtube
+  videoType       String    // 知识分享 / 产品测评 / Vlog 等
+  duration        Int?      // 目标时长（秒）
+  topic           String    // 输入的主题
+  content         String    // 脚本正文（Markdown）
+  storyboard      String?   // 分镜头数据（JSON）
+  coverTitle      String?   // 封面标题建议
+  sourceArticleId Int?      @map("source_article_id") // 来源文章ID
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  sourceArticle   Article?  @relation(fields: [sourceArticleId], references: [id])
+
+  @@map("video_scripts")
+}
+

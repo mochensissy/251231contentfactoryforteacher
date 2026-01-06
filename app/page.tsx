@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BarChart3, FileEdit, ListChecks, TrendingUp, Users, FileText } from "lucide-react"
+import { BarChart3, FileEdit, FolderOpen, TrendingUp, Users, FileText, Video } from "lucide-react"
 
 export default function Home() {
   return (
@@ -14,7 +14,7 @@ export default function Home() {
       </div>
 
       {/* 快速操作 */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
           <Link href="/topic-analysis">
             <CardHeader>
@@ -40,7 +40,7 @@ export default function Home() {
                 <FileEdit className="h-5 w-5 text-muted-foreground" />
               </div>
               <CardDescription>
-                AI一键生成高质量文章，自动插入配图
+                AI智能创作或手动编辑，一键发布到公众号
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -50,14 +50,31 @@ export default function Home() {
         </Card>
 
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+          <Link href="/video-script">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">视频脚本</CardTitle>
+                <Video className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <CardDescription>
+                AI生成短视频脚本，自动分镜建议
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full">生成脚本</Button>
+            </CardContent>
+          </Link>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
           <Link href="/publish-management">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">发布管理</CardTitle>
-                <ListChecks className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-lg">文章库</CardTitle>
+                <FolderOpen className="h-5 w-5 text-muted-foreground" />
               </div>
               <CardDescription>
-                管理文章并发布到小红书和公众号
+                管理所有文章，发布到公众号和小红书
               </CardDescription>
             </CardHeader>
             <CardContent>
