@@ -10,7 +10,10 @@ import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Settings, Key, Link as LinkIcon, Save, Download, Upload, CheckCircle2, XCircle, Loader2, Plus, Trash2 } from "lucide-react"
-import { FORMATTING_STYLE_PRESETS, WRITING_TONE_PRESETS, FormattingStyleKey, WritingToneKey } from "@/lib/prompt-presets"
+import { FORMATTING_STYLE_PRESETS, WRITING_TONE_PRESETS, PLATFORM_ARTICLE_PRESETS, VIDEO_SCRIPT_TYPE_PRESETS, FormattingStyleKey, WritingToneKey, PlatformArticleKey, VideoScriptTypeKey } from "@/lib/prompt-presets"
+import { saveWechatArticleApiConfig, getWechatArticleApiConfig, saveAiApiConfig, getAiApiConfig, savePromptSettings, getPromptSettings, saveImageApiConfig, getImageApiConfig } from "@/lib/api-config"
+import { AI_MODEL_PRESETS, getModelById, getPriceLevelText } from "@/lib/ai-model-presets"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // 微信公众号账号配置接口
 interface WechatAccount {
@@ -45,6 +48,21 @@ export default function SettingsPage() {
   // 文风状态
   const [selectedWritingTone, setSelectedWritingTone] = useState<'professional' | 'casual' | 'storytelling' | 'tutorial'>('professional')
 
+  // 文章平台选择状态
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformArticleKey>('wechat')
+
+  // 视频脚本类型状态
+  const [selectedVideoScriptType, setSelectedVideoScriptType] = useState<VideoScriptTypeKey>('knowledge')
+
+  // AI模型选择状态
+  const [selectedAiModel, setSelectedAiModel] = useState<string>('google/gemini-2.5-flash-lite')
+  const [useCustomModel, setUseCustomModel] = useState<boolean>(false)
+  const [customModelId, setCustomModelId] = useState<string>('')
+
+  // 选题分析默认设置状态
+  const [analysisCount, setAnalysisCount] = useState<string>('20')
+  const [insightsCount, setInsightsCount] = useState<string>('5')
+
   // 最大公众号数量
 
   const MAX_ACCOUNTS = 5
@@ -62,6 +80,105 @@ export default function SettingsPage() {
       } catch (e) {
         console.error('Failed to load wechat accounts:', e)
       }
+    }
+  }, [])
+
+  // 加载已保存的 API 配置
+  useEffect(() => {
+    // 公众号文章 API 配置
+    const wechatArticleConfig = getWechatArticleApiConfig()
+    if (wechatArticleConfig.apiUrl) {
+      const urlInput = document.getElementById('wechat-api-url') as HTMLInputElement
+      if (urlInput) urlInput.value = wechatArticleConfig.apiUrl
+    }
+    if (wechatArticleConfig.apiKey) {
+      const keyInput = document.getElementById('wechat-api-key') as HTMLInputElement
+      if (keyInput) keyInput.value = wechatArticleConfig.apiKey
+    }
+
+    // AI API 配置
+    const aiConfig = getAiApiConfig()
+    if (aiConfig.apiUrl) {
+      const urlInput = document.getElementById('ai-api-url') as HTMLInputElement
+      if (urlInput) urlInput.value = aiConfig.apiUrl
+    }
+    if (aiConfig.apiKey) {
+      const keyInput = document.getElementById('ai-api-key') as HTMLInputElement
+      if (keyInput) keyInput.value = aiConfig.apiKey
+    }
+    if (aiConfig.model) {
+      // 检查是否是预设模型
+      const presetModel = getModelById(aiConfig.model)
+      if (presetModel) {
+        setSelectedAiModel(aiConfig.model)
+        setUseCustomModel(false)
+      } else {
+        // 自定义模型
+        setUseCustomModel(true)
+        setCustomModelId(aiConfig.model)
+      }
+    }
+
+    // 加载选题分析默认设置
+    try {
+      const savedDefaults = localStorage.getItem('analysis-defaults')
+      if (savedDefaults) {
+        const defaults = JSON.parse(savedDefaults)
+        if (defaults.analysisCount) {
+          setAnalysisCount(defaults.analysisCount)
+        }
+        if (defaults.insightsCount) {
+          setInsightsCount(defaults.insightsCount)
+        }
+      }
+    } catch (e) {
+      console.error('加载分析默认设置失败:', e)
+    }
+
+    // 加载提示词设置
+    try {
+      const promptSettings = getPromptSettings()
+      if (promptSettings.coverPrompt) {
+        const coverPromptEl = document.getElementById('cover-image-prompt') as HTMLTextAreaElement
+        if (coverPromptEl) coverPromptEl.value = promptSettings.coverPrompt
+      }
+      if (promptSettings.illustrationPrompt) {
+        const illPromptEl = document.getElementById('article-image-prompt') as HTMLTextAreaElement
+        if (illPromptEl) illPromptEl.value = promptSettings.illustrationPrompt
+      }
+      // 恢复选择项
+      if (promptSettings.selectedPlatform) {
+        setSelectedPlatform(promptSettings.selectedPlatform as PlatformArticleKey)
+      }
+      if (promptSettings.selectedWritingTone) {
+        setSelectedWritingTone(promptSettings.selectedWritingTone as WritingToneKey)
+      }
+      if (promptSettings.selectedFormattingStyle) {
+        setSelectedFormattingStyle(promptSettings.selectedFormattingStyle as 'ochre' | 'blue' | 'monochrome' | 'green')
+      }
+    } catch (e) {
+      console.error('加载提示词设置失败:', e)
+    }
+
+    // 加载图片API配置
+    try {
+      const imageConfig = getImageApiConfig()
+      if (imageConfig.siliconflow) {
+        const sfUrlEl = document.getElementById('siliconflow-api-url') as HTMLInputElement
+        const sfKeyEl = document.getElementById('siliconflow-api-key') as HTMLInputElement
+        const sfModelEl = document.getElementById('siliconflow-model') as HTMLInputElement
+        if (sfUrlEl && imageConfig.siliconflow.apiUrl) sfUrlEl.value = imageConfig.siliconflow.apiUrl
+        if (sfKeyEl && imageConfig.siliconflow.apiKey) sfKeyEl.value = imageConfig.siliconflow.apiKey
+        if (sfModelEl && imageConfig.siliconflow.model) sfModelEl.value = imageConfig.siliconflow.model
+      }
+      if (imageConfig.dashscope) {
+        const dsUrlEl = document.getElementById('dashscope-api-url') as HTMLInputElement
+        const dsKeyEl = document.getElementById('dashscope-api-key') as HTMLInputElement
+        if (dsUrlEl && imageConfig.dashscope.apiUrl) dsUrlEl.value = imageConfig.dashscope.apiUrl
+        if (dsKeyEl && imageConfig.dashscope.apiKey) dsKeyEl.value = imageConfig.dashscope.apiKey
+      }
+    } catch (e) {
+      console.error('加载图片API配置失败:', e)
     }
   }, [])
 
@@ -117,6 +234,41 @@ export default function SettingsPage() {
   const activeAccount = wechatAccounts.find(a => a.id === activeAccountId)
 
   const handleSave = () => {
+    // 保存选题分析默认设置到 localStorage
+    const analysisDefaults = {
+      analysisCount: analysisCount,
+      insightsCount: insightsCount,
+    }
+    localStorage.setItem('analysis-defaults', JSON.stringify(analysisDefaults))
+
+    // 保存提示词设置（包含选择项和自定义提示词）
+    const coverPrompt = (document.getElementById('cover-image-prompt') as HTMLTextAreaElement)?.value || ''
+    const illustrationPrompt = (document.getElementById('article-image-prompt') as HTMLTextAreaElement)?.value || ''
+    const articlePrompt = (document.getElementById('article-prompt') as HTMLTextAreaElement)?.value || ''
+
+    savePromptSettings({
+      coverPrompt,
+      illustrationPrompt,
+      articlePrompt,
+      selectedPlatform,
+      selectedWritingTone,
+      selectedFormattingStyle,
+    })
+
+    // 保存硅基流动API配置
+    const siliconflowApiUrl = (document.getElementById('siliconflow-api-url') as HTMLInputElement)?.value || ''
+    const siliconflowApiKey = (document.getElementById('siliconflow-api-key') as HTMLInputElement)?.value || ''
+    const siliconflowModel = (document.getElementById('siliconflow-model') as HTMLInputElement)?.value || ''
+
+    // 保存阿里云通义万相API配置
+    const dashscopeApiUrl = (document.getElementById('dashscope-api-url') as HTMLInputElement)?.value || ''
+    const dashscopeApiKey = (document.getElementById('dashscope-api-key') as HTMLInputElement)?.value || ''
+
+    saveImageApiConfig({
+      siliconflow: { apiUrl: siliconflowApiUrl, apiKey: siliconflowApiKey, model: siliconflowModel },
+      dashscope: { apiUrl: dashscopeApiUrl, apiKey: dashscopeApiKey },
+    })
+
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -178,7 +330,15 @@ export default function SettingsPage() {
     try {
       const apiUrl = (document.getElementById('ai-api-url') as HTMLInputElement)?.value
       const apiKey = (document.getElementById('ai-api-key') as HTMLInputElement)?.value
-      const model = (document.getElementById('ai-model') as HTMLInputElement)?.value
+      // 使用选中的模型（预设或自定义）
+      const model = useCustomModel ? customModelId : selectedAiModel
+
+      if (!model) {
+        alert('请选择或输入AI模型')
+        setAiTestStatus('error')
+        setTimeout(() => setAiTestStatus('idle'), 3000)
+        return
+      }
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -194,13 +354,18 @@ export default function SettingsPage() {
       })
 
       if (response.ok) {
+        // 保存 AI API 配置到 localStorage
+        saveAiApiConfig({ apiUrl, apiKey, model })
         setAiTestStatus('success')
         setTimeout(() => setAiTestStatus('idle'), 3000)
       } else {
+        const errorText = await response.text()
+        console.error('AI API Error:', response.status, errorText)
         setAiTestStatus('error')
         setTimeout(() => setAiTestStatus('idle'), 3000)
       }
     } catch (error) {
+      console.error('AI Connection Error:', error)
       setAiTestStatus('error')
       setTimeout(() => setAiTestStatus('idle'), 3000)
     }
@@ -213,20 +378,49 @@ export default function SettingsPage() {
       const apiUrl = (document.getElementById('wechat-api-url') as HTMLInputElement)?.value
       const apiKey = (document.getElementById('wechat-api-key') as HTMLInputElement)?.value
 
+      if (!apiKey) {
+        alert('请先填写 API Key')
+        setWechatArticleTestStatus('error')
+        setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
+        return
+      }
+
       const response = await fetch('/api/wechat-articles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: '测试', page: 1 }),
+        body: JSON.stringify({
+          keyword: '微信公众号', // 使用更长的关键词
+          page: 1,
+          apiUrl: apiUrl,
+          apiKey: apiKey,
+        }),
       })
 
-      if (response.ok) {
+      const data = await response.json().catch(() => ({}))
+
+      // 如果API返回了响应（无论成功还是业务错误），说明连接是通的
+      if (response.ok && data.success) {
+        // 保存配置到 localStorage
+        saveWechatArticleApiConfig({ apiUrl, apiKey })
         setWechatArticleTestStatus('success')
-        setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
+      } else if (data.error && (data.error.includes('关键词') || data.error.includes('keyword'))) {
+        // API返回了关键词相关的业务错误，说明连接是成功的
+        saveWechatArticleApiConfig({ apiUrl, apiKey })
+        setWechatArticleTestStatus('success')
+      } else if (response.status === 400 && data.error) {
+        // 其他400错误也可能是API返回的业务错误，说明连接成功
+        console.log('API业务错误（但连接成功）:', data.error)
+        saveWechatArticleApiConfig({ apiUrl, apiKey })
+        setWechatArticleTestStatus('success')
       } else {
+        console.error('连接失败:', response.status, data)
+        alert(`连接失败: ${data.error || `HTTP ${response.status}`}`)
         setWechatArticleTestStatus('error')
-        setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
       }
+      setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
     } catch (error) {
+      console.error('网络错误:', error)
+      alert('连接失败: 网络错误')
       setWechatArticleTestStatus('error')
       setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
     }
@@ -542,16 +736,71 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="ai-model">模型</Label>
-                <Input
-                  id="ai-model"
-                  placeholder="google/gemini-2.0-flash-thinking-exp:free"
-                  defaultValue="google/gemini-2.5-flash-lite"
-                />
-                <p className="text-sm text-muted-foreground">
-                  推荐免费模型。查看更多：<a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">模型列表</a>
-                </p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>AI模型选择</Label>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="use-custom-model"
+                      checked={useCustomModel}
+                      onCheckedChange={(checked) => setUseCustomModel(checked as boolean)}
+                    />
+                    <Label htmlFor="use-custom-model" className="text-sm text-muted-foreground cursor-pointer">
+                      使用自定义模型
+                    </Label>
+                  </div>
+                </div>
+
+                {!useCustomModel ? (
+                  <>
+                    <Select value={selectedAiModel} onValueChange={setSelectedAiModel}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="选择AI模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AI_MODEL_PRESETS.map((model) => (
+                          <SelectItem key={model.id} value={model.id}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{model.name}</span>
+                              <span className="text-xs text-muted-foreground">({model.provider})</span>
+                              {model.recommended && (
+                                <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">推荐</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* 显示选中模型的详细信息 */}
+                    {selectedAiModel && getModelById(selectedAiModel) && (
+                      <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{getModelById(selectedAiModel)?.name}</span>
+                          <span className="text-xs">{getPriceLevelText(getModelById(selectedAiModel)?.priceLevel || 1)}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{getModelById(selectedAiModel)?.description}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {getModelById(selectedAiModel)?.tags.map((tag, i) => (
+                            <span key={i} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{tag}</span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">价格参考: {getModelById(selectedAiModel)?.priceNote}</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="输入模型ID，如 anthropic/claude-3-opus"
+                      value={customModelId}
+                      onChange={(e) => setCustomModelId(e.target.value)}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      查看可用模型：<a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">OpenRouter 模型列表</a>
+                    </p>
+                  </div>
+                )}
               </div>
 
               <Separator />
@@ -591,7 +840,7 @@ export default function SettingsPage() {
                   id="wechat-api-key"
                   type="password"
                   placeholder="JZL..."
-                  defaultValue="JZL34baea50c020a325"
+                  defaultValue="JZLc29ca3bfdebd2bf3"
                 />
               </div>
 
@@ -908,23 +1157,23 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>文章生成提示词</CardTitle>
               <CardDescription>
-                配置AI生成文章的提示词模板，可选择不同文风或自定义修改
+                配置AI生成文章的提示词模板，支持多平台定制
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* 文风选择标签 */}
+              {/* 平台选择标签 */}
               <div className="space-y-2">
-                <Label>选择文风</Label>
+                <Label>选择发布平台</Label>
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(WRITING_TONE_PRESETS) as WritingToneKey[]).map((key) => {
-                    const preset = WRITING_TONE_PRESETS[key]
-                    const isSelected = selectedWritingTone === key
+                  {(Object.keys(PLATFORM_ARTICLE_PRESETS) as PlatformArticleKey[]).map((key) => {
+                    const preset = PLATFORM_ARTICLE_PRESETS[key]
+                    const isSelected = selectedPlatform === key
                     return (
                       <button
                         key={key}
                         type="button"
-                        onClick={() => setSelectedWritingTone(key)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
+                        onClick={() => setSelectedPlatform(key)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${isSelected
                           ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
                           : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
                           }`}
@@ -935,33 +1184,91 @@ export default function SettingsPage() {
                   })}
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {WRITING_TONE_PRESETS[selectedWritingTone].description}
+                  {PLATFORM_ARTICLE_PRESETS[selectedPlatform].description}
                 </p>
               </div>
 
               <Separator />
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="article-prompt">提示词模板（{WRITING_TONE_PRESETS[selectedWritingTone].name}风格）</Label>
-                  <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
-                </div>
-                <Textarea
-                  id="article-prompt"
-                  rows={15}
-                  placeholder="输入文章生成提示词..."
-                  value={WRITING_TONE_PRESETS[selectedWritingTone].prompt}
-                  onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
-                />
-                <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
-                  <span className="text-blue-500">💡</span>
-                  <div className="text-sm text-blue-700 dark:text-blue-300">
-                    <p className="font-medium">自定义提示</p>
-                    <p>切换文风会加载对应的预设提示词。您可以在此基础上自行修改，修改后的内容会在切换风格时被重置。</p>
-                    <p className="mt-1">变量占位符：{'{'}topic{'}'}, {'{'}description{'}'}, {'{'}outline{'}'}, {'{'}wordCount{'}'}, {'{'}style{'}'}, {'{'}imageCount{'}'}</p>
+              {/* 微信公众号：使用文风选择 */}
+              {selectedPlatform === 'wechat' && (
+                <>
+                  <div className="space-y-2">
+                    <Label>选择文风</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(Object.keys(WRITING_TONE_PRESETS) as WritingToneKey[]).map((key) => {
+                        const preset = WRITING_TONE_PRESETS[key]
+                        const isSelected = selectedWritingTone === key
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setSelectedWritingTone(key)}
+                            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
+                              ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
+                              : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
+                              }`}
+                          >
+                            {preset.emoji} {preset.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {WRITING_TONE_PRESETS[selectedWritingTone].description}
+                    </p>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="article-prompt">提示词模板（{WRITING_TONE_PRESETS[selectedWritingTone].name}风格）</Label>
+                      <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
+                    </div>
+                    <Textarea
+                      id="article-prompt"
+                      rows={15}
+                      placeholder="输入文章生成提示词..."
+                      value={WRITING_TONE_PRESETS[selectedWritingTone].prompt}
+                      onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
+                    />
+                    <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                      <span className="text-blue-500">💡</span>
+                      <div className="text-sm text-blue-700 dark:text-blue-300">
+                        <p className="font-medium">自定义提示</p>
+                        <p>切换文风会加载对应的预设提示词。您可以在此基础上自行修改。</p>
+                        <p className="mt-1">变量占位符：{'{'}topic{'}'}, {'{'}description{'}'}, {'{'}outline{'}'}, {'{'}wordCount{'}'}, {'{'}imageCount{'}'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* 小红书/推特：使用平台专属提示词 */}
+              {(selectedPlatform === 'xiaohongshu' || selectedPlatform === 'twitter') && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="platform-prompt">{PLATFORM_ARTICLE_PRESETS[selectedPlatform].name}提示词模板</Label>
+                    <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
+                  </div>
+                  <Textarea
+                    id="platform-prompt"
+                    rows={18}
+                    placeholder={`输入${PLATFORM_ARTICLE_PRESETS[selectedPlatform].name}内容生成提示词...`}
+                    value={'prompt' in PLATFORM_ARTICLE_PRESETS[selectedPlatform] ? (PLATFORM_ARTICLE_PRESETS[selectedPlatform] as { prompt: string }).prompt : ''}
+                    onChange={() => {/* 用户可以编辑 */ }}
+                  />
+                  <div className={`flex items-start gap-2 p-3 rounded-lg ${selectedPlatform === 'xiaohongshu' ? 'bg-red-50 dark:bg-red-950' : 'bg-sky-50 dark:bg-sky-950'}`}>
+                    <span className={selectedPlatform === 'xiaohongshu' ? 'text-red-500' : 'text-sky-500'}>💡</span>
+                    <div className={`text-sm ${selectedPlatform === 'xiaohongshu' ? 'text-red-700 dark:text-red-300' : 'text-sky-700 dark:text-sky-300'}`}>
+                      <p className="font-medium">{PLATFORM_ARTICLE_PRESETS[selectedPlatform].name}内容特点</p>
+                      <p>{selectedPlatform === 'xiaohongshu' ? '小红书注重真实分享、种草体验，需要emoji和话题标签' : '推特/X强调简洁有力、观点鲜明，支持Thread长文'}</p>
+                      <p className="mt-1">变量占位符：{'{'}topic{'}'}, {'{'}description{'}'}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1049,60 +1356,61 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>视频脚本提示词</CardTitle>
               <CardDescription>
-                配置AI生成视频脚本的提示词模板，控制脚本格式和风格
+                配置AI生成视频脚本的提示词模板，支持按视频类型定制
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* 视频类型选择标签 */}
               <div className="space-y-2">
-                <Label htmlFor="video-script-prompt">视频脚本提示词模板</Label>
+                <Label>选择视频类型</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(VIDEO_SCRIPT_TYPE_PRESETS) as VideoScriptTypeKey[]).map((key) => {
+                    const preset = VIDEO_SCRIPT_TYPE_PRESETS[key]
+                    const isSelected = selectedVideoScriptType === key
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSelectedVideoScriptType(key)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
+                          ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
+                          : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
+                          }`}
+                      >
+                        {preset.emoji} {preset.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {VIDEO_SCRIPT_TYPE_PRESETS[selectedVideoScriptType].description}
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="video-script-prompt">
+                    {VIDEO_SCRIPT_TYPE_PRESETS[selectedVideoScriptType].name}脚本提示词模板
+                  </Label>
+                  <span className="text-xs text-muted-foreground">💡 可在预设基础上自行修改</span>
+                </div>
                 <Textarea
                   id="video-script-prompt"
-                  rows={15}
+                  rows={18}
                   placeholder="输入视频脚本生成提示词..."
-                  defaultValue={`你是一位专业的短视频脚本创作者。请根据以下要求创作一个高质量的视频脚本。
-
-选题标题：{topic}
-选题描述：{description}
-视频时长：{duration}秒
-
-脚本格式要求：
-1. **开场钩子**（前3秒）：用一句话抓住观众注意力
-2. **问题引入**（5-10秒）：引出观众痛点或好奇心
-3. **核心内容**（主体部分）：分点阐述，每点配合画面描述
-4. **总结升华**（结尾）：总结要点，引导互动
-
-输出格式：
----
-【开场钩子】
-旁白：...
-画面：...
-
-【问题引入】
-旁白：...
-画面：...
-
-【核心内容-第1点】
-旁白：...
-画面：...
-
-【核心内容-第2点】
-旁白：...
-画面：...
-
-【总结升华】
-旁白：...
-画面：...
----
-
-注意事项：
-- 语言口语化，避免书面语
-- 每句话控制在15字以内，方便配音
-- 画面描述要具体，便于拍摄或剪辑
-- 适当加入互动引导（点赞、关注、评论）`}
+                  value={VIDEO_SCRIPT_TYPE_PRESETS[selectedVideoScriptType].prompt}
+                  onChange={() => {/* 用户可以编辑，但切换类型会重置 */ }}
                 />
-                <p className="text-sm text-muted-foreground">
-                  提示：使用 {'{'}topic{'}'}, {'{'}description{'}'}, {'{'}duration{'}'} 作为变量占位符
-                </p>
+                <div className="flex items-start gap-2 p-3 bg-violet-50 dark:bg-violet-950 rounded-lg">
+                  <span className="text-violet-500">💡</span>
+                  <div className="text-sm text-violet-700 dark:text-violet-300">
+                    <p className="font-medium">类型差异化提示</p>
+                    <p>不同视频类型有不同的结构和风格要求。切换类型会加载对应的预设提示词。</p>
+                    <p className="mt-1">变量占位符：{'{'}topic{'}'}, {'{'}description{'}'}, {'{'}duration{'}'}</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1202,17 +1510,23 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="analysis-count">分析文章数量</Label>
+                <Label htmlFor="analysis-count">AI分析文章数量</Label>
                 <Input
                   id="analysis-count"
                   type="number"
-                  defaultValue="20"
-                  min="10"
-                  max="100"
+                  value={analysisCount}
+                  onChange={(e) => setAnalysisCount(e.target.value)}
+                  min="5"
+                  max="20"
                 />
-                <p className="text-sm text-muted-foreground">
-                  每次分析抓取的文章数量（10-100）
-                </p>
+                <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 rounded-lg">
+                  <span className="text-amber-500">⚠️</span>
+                  <div className="text-sm text-amber-700 dark:text-amber-300">
+                    <p className="font-medium">费用说明</p>
+                    <p>极致了API每次固定返回20篇文章，费用0.4元（0.02元/篇），<strong>无法减少</strong>。</p>
+                    <p className="mt-1">此设置仅控制用于AI分析的文章数量（5-20篇）。减少分析数量可节省AI token消耗，但不影响API费用。</p>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1220,7 +1534,8 @@ export default function SettingsPage() {
                 <Input
                   id="insights-count"
                   type="number"
-                  defaultValue="5"
+                  value={insightsCount}
+                  onChange={(e) => setInsightsCount(e.target.value)}
                   min="3"
                   max="10"
                 />

@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Search, ThumbsUp, TrendingUp, Cloud, Lightbulb, AlertCircle, ExternalLink, ArrowLeft, Target, Users, Sparkles, ChevronDown, ChevronUp } from "lucide-react"
 import type { WechatArticle, AnalysisResult, EnhancedInsight } from "@/lib/types"
 import { HistorySidebar } from "@/components/history-sidebar"
+import { getWechatArticleApiConfig, getAiApiConfig, getAnalysisDefaults } from "@/lib/api-config"
 
 export default function TopicAnalysisPage() {
   const router = useRouter()
@@ -66,16 +67,16 @@ export default function TopicAnalysisPage() {
     const bestEnhanced = analysisResult.enhancedInsights?.[0] || null
     const fallback = !bestEnhanced && analysisResult.insights?.[0]
       ? {
-          title: analysisResult.insights[0].title,
-          description: analysisResult.insights[0].description,
-          category: "洞察",
-          targetAudience: "通用",
-          contentAngle: "",
-          suggestedOutline: [],
-          referenceArticles: [],
-          confidence: 50,
-          reasons: [],
-        }
+        title: analysisResult.insights[0].title,
+        description: analysisResult.insights[0].description,
+        category: "洞察",
+        targetAudience: "通用",
+        contentAngle: "",
+        suggestedOutline: [],
+        referenceArticles: [],
+        confidence: 50,
+        reasons: [],
+      }
       : null
 
     // 写入 sessionStorage 供内容创作页自动选择
@@ -147,6 +148,13 @@ export default function TopicAnalysisPage() {
       return
     }
 
+    // 检查API配置
+    const apiConfig = getWechatArticleApiConfig()
+    if (!apiConfig.apiKey) {
+      setError("请先在设置页面配置公众号文章API Key（设置 → API配置 → 公众号文章API）")
+      return
+    }
+
     setKeyword(kw)
     setIsAnalyzing(true)
     setShowReport(false)
@@ -155,10 +163,17 @@ export default function TopicAnalysisPage() {
     setProgress(0)
     setCurrentTaskId(null)
 
+    // 获取设置中的分析文章数量（在API调用前获取，避免多扣费）
+    const analysisDefaults = getAnalysisDefaults()
+    const analysisCount = analysisDefaults.analysisCount
+
     try {
       // 第一步：获取公众号文章
-      setProgressText("正在获取公众号文章...")
+      setProgressText(`正在获取 ${analysisCount} 篇公众号文章...`)
       setProgress(20)
+
+      // 获取保存的 API 配置
+      const apiConfig = getWechatArticleApiConfig()
 
       const articlesResponse = await fetch('/api/wechat-articles', {
         method: 'POST',
@@ -169,6 +184,9 @@ export default function TopicAnalysisPage() {
           keyword: kw,
           page: 1,
           period: 7,
+          limit: analysisCount,  // 限制返回条数，避免多扣费
+          apiUrl: apiConfig.apiUrl,
+          apiKey: apiConfig.apiKey,
         }),
       })
 
@@ -180,16 +198,21 @@ export default function TopicAnalysisPage() {
 
       const articlesData = await articlesResponse.json()
       console.log('获取到文章数据:', articlesData)
-      const fetchedArticles: WechatArticle[] = articlesData.data || []
+      const allFetchedArticles: WechatArticle[] = articlesData.data || []
 
-      if (fetchedArticles.length === 0) {
+      if (allFetchedArticles.length === 0) {
         throw new Error('未找到相关文章，请尝试其他关键词或扩大时间范围')
       }
+
+      // API已经限制了返回条数，直接使用返回的文章
+      const fetchedArticles = allFetchedArticles
+
+      console.log(`📊 成功获取 ${fetchedArticles.length} 篇文章进行分析`)
 
       setArticles(fetchedArticles)
       setTotalArticles(fetchedArticles.length)
       setProgress(50)
-      setProgressText(`已获取 ${fetchedArticles.length} 篇文章，正在分析...`)
+      setProgressText(`已获取 ${fetchedArticles.length} 篇文章，开始分析...`)
 
       // 第二步：AI 摘要提取
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -200,6 +223,9 @@ export default function TopicAnalysisPage() {
       setProgress(70)
       setProgressText("AI 正在生成深度洞察...")
 
+      // 获取 AI API 配置
+      const aiConfig = getAiApiConfig()
+
       const analysisResponse = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
@@ -208,6 +234,10 @@ export default function TopicAnalysisPage() {
         body: JSON.stringify({
           articles: fetchedArticles,
           keyword: kw,
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model,
+          insightsCount: analysisDefaults.insightsCount, // 使用设置中的洞察数量
         }),
       })
 
@@ -284,6 +314,13 @@ export default function TopicAnalysisPage() {
       return
     }
 
+    // 检查API配置
+    const apiConfig = getWechatArticleApiConfig()
+    if (!apiConfig.apiKey) {
+      setError("请先在设置页面配置公众号文章API Key（设置 → API配置 → 公众号文章API）")
+      return
+    }
+
     setIsAnalyzing(true)
     setShowReport(false)
     setViewingHistory(false)
@@ -318,17 +355,23 @@ export default function TopicAnalysisPage() {
       const historyData = await historyResponse.json()
       const { mpInfo, top20 } = historyData.data
 
-      // 取TOP20进行分析（已按阅读量排序）
-      const articlesToAnalyze = top20.slice(0, 20)
+      // 获取设置中的分析文章数量
+      const analysisDefaults = getAnalysisDefaults()
+      const analysisCount = analysisDefaults.analysisCount
+
+      // 根据设置截取文章数量（已按阅读量排序）
+      const articlesToAnalyze = top20.slice(0, analysisCount)
 
       if (articlesToAnalyze.length === 0) {
         throw new Error('未找到该公众号的历史文章')
       }
 
+      console.log(`📊 根据设置截取前 ${analysisCount} 篇文章进行分析（共获取 ${top20.length} 篇）`)
+
       setArticles(articlesToAnalyze)
       setTotalArticles(articlesToAnalyze.length)
       setProgress(50)
-      setProgressText(`已获取 ${articlesToAnalyze.length} 篇历史文章，正在分析...`)
+      setProgressText(`已获取 ${top20.length} 篇历史文章，分析前 ${articlesToAnalyze.length} 篇...`)
 
       // 第二步：AI分析（复用现有逻辑）
       setProgress(55)
@@ -338,6 +381,9 @@ export default function TopicAnalysisPage() {
       setProgress(70)
       setProgressText("AI 正在生成深度洞察...")
 
+      // 获取 AI API 配置
+      const aiConfig = getAiApiConfig()
+
       const analysisResponse = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
@@ -346,6 +392,10 @@ export default function TopicAnalysisPage() {
         body: JSON.stringify({
           articles: articlesToAnalyze,
           keyword: mpInfo.nickname,  // 使用公众号名称作为关键词
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model,
+          insightsCount: analysisDefaults.insightsCount, // 使用设置中的洞察数量
         }),
       })
 
@@ -649,9 +699,10 @@ export default function TopicAnalysisPage() {
                                   href={article.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="font-medium text-sm hover:text-primary flex items-center gap-1 line-clamp-1"
+                                  className="font-medium text-sm hover:text-primary flex items-center gap-1"
+                                  title={article.title}
                                 >
-                                  {article.title}
+                                  <span className="line-clamp-1 break-all">{article.title.length > 50 ? article.title.slice(0, 50) + '...' : article.title}</span>
                                   <ExternalLink className="h-3 w-3 flex-shrink-0" />
                                 </a>
                               </div>
@@ -691,9 +742,10 @@ export default function TopicAnalysisPage() {
                                   href={article.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="font-medium text-sm hover:text-primary flex items-center gap-1 line-clamp-1"
+                                  className="font-medium text-sm hover:text-primary flex items-center gap-1"
+                                  title={article.title}
                                 >
-                                  {article.title}
+                                  <span className="line-clamp-1 break-all">{article.title.length > 50 ? article.title.slice(0, 50) + '...' : article.title}</span>
                                   <ExternalLink className="h-3 w-3 flex-shrink-0" />
                                 </a>
                               </div>
@@ -965,7 +1017,26 @@ export default function TopicAnalysisPage() {
                                     )}
                                   </Button>
                                 )}
-                                <Button size="sm">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    // 保存当前洞察到 sessionStorage 并跳转到内容创作
+                                    try {
+                                      sessionStorage.setItem(
+                                        "content-creation-source",
+                                        JSON.stringify({
+                                          taskId: currentTaskId ?? null,
+                                          keyword,
+                                          insight: insight,
+                                          insights: analysisResult?.enhancedInsights || analysisResult?.insights || [],
+                                        })
+                                      )
+                                    } catch (err) {
+                                      console.error("缓存创作选题失败:", err)
+                                    }
+                                    router.push("/content-creation")
+                                  }}
+                                >
                                   <Sparkles className="h-4 w-4 mr-1" />
                                   一键创作
                                 </Button>
@@ -1064,12 +1135,12 @@ export default function TopicAnalysisPage() {
                 }}>
                   重新分析
                 </Button>
-              <Button
-                onClick={handleStartCreation}
-                disabled={!analysisResult}
-              >
-                基于洞察开始创作
-              </Button>
+                <Button
+                  onClick={handleStartCreation}
+                  disabled={!analysisResult}
+                >
+                  基于洞察开始创作
+                </Button>
               </div>
             )}
           </div>

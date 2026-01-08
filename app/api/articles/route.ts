@@ -88,8 +88,9 @@ export async function POST(request: NextRequest) {
         })
     } catch (error) {
         console.error('创建文章失败:', error)
+        const errorMessage = error instanceof Error ? error.message : '创建失败'
         return NextResponse.json(
-            { success: false, error: '创建失败' },
+            { success: false, error: errorMessage, details: String(error) },
             { status: 500 }
         )
     }

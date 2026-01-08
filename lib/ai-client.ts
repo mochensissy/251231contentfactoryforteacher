@@ -35,13 +35,14 @@ export class AIClient {
   private apiKey: string
   private model: string
 
-  constructor() {
-    this.apiUrl = process.env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1/chat/completions'
-    this.apiKey = process.env.OPENROUTER_API_KEY || ''
-    this.model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-thinking-exp:free'
+  constructor(config?: { apiUrl?: string; apiKey?: string; model?: string }) {
+    // 优先使用传入配置，其次环境变量，最后默认值
+    this.apiUrl = config?.apiUrl || process.env.OPENROUTER_API_URL || process.env.AI_API_URL || 'https://openrouter.ai/api/v1/chat/completions'
+    this.apiKey = config?.apiKey || process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || ''
+    this.model = config?.model || process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'google/gemini-2.0-flash-thinking-exp:free'
 
     if (!this.apiKey) {
-      console.warn('⚠️ OPENROUTER_API_KEY not set in environment variables')
+      console.warn('⚠️ AI API Key not configured')
     }
   }
 
@@ -231,7 +232,8 @@ ${truncatedContent}
       targetAudience: string
       writeStyle: string
     }>,
-    wordCloud: Array<{ word: string; weight: number }>
+    wordCloud: Array<{ word: string; weight: number }>,
+    insightsCount: number = 5 // 新增：可配置洞察数量
   ): Promise<Array<{
     title: string
     category: string
@@ -256,7 +258,7 @@ ${truncatedContent}
 
     const topWords = wordCloud.slice(0, 10).map(w => w.word).join('、')
 
-    const prompt = `你是一位资深的内容策划专家和选题分析师。基于以下数据，为内容创作者生成 5 条深度、可操作的选题洞察。
+    const prompt = `你是一位资深的内容策划专家和选题分析师。基于以下数据，为内容创作者生成 ${insightsCount} 条深度、可操作的选题洞察。
 
 关键词：${keyword}
 
@@ -266,7 +268,7 @@ ${topWords}
 热门文章分析（TOP 表现文章）：
 ${summariesText}
 
-请基于以上数据，生成 5 条高质量的选题洞察建议。每条洞察应该：
+请基于以上数据，生成 ${insightsCount} 条高质量的选题洞察建议。每条洞察应该：
 1. 有明确的选题方向和切入角度
 2. 提供具体的内容建议和大纲
 3. 说明为什么这个选题有价值（数据支撑）
@@ -287,13 +289,13 @@ ${summariesText}
     "confidence": 85,
     "reasons": ["推荐理由1（基于数据）", "推荐理由2（基于趋势）", "推荐理由3（基于受众需求）"]
   },
-  ...共5条
+  ...共${insightsCount}条
 ]
 
 要求：
 1. 只输出 JSON 数组，不要有其他内容
 2. 确保 JSON 格式正确
-3. 5 条洞察应该覆盖不同的角度和分类
+3. ${insightsCount} 条洞察应该覆盖不同的角度和分类
 4. confidence 是 0-100 的数字，表示这个洞察的置信度
 5. reasons 应该基于实际数据分析，不要泛泛而谈
 6. suggestedOutline 应该是 3-5 个具体的内容要点

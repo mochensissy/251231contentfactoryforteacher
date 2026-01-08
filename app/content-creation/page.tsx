@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, type KeyboardEvent } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,8 @@ import { Wand2, RefreshCw, Save, Search, ChevronDown, ChevronUp, Send, Loader2, 
 import { marked } from "marked"
 import type { EnhancedInsight } from "@/lib/types"
 import { getEnabledWechatAccounts, type WechatAccount } from "@/lib/wechat-accounts"
+import { MultiPlatformPublish } from "@/components/multi-platform-publish"
+import { getAiApiConfig, getImageApiConfig, getPromptSettings } from "@/lib/api-config"
 
 interface AnalysisTask {
   id: number
@@ -163,6 +166,19 @@ export default function ContentCreationPage() {
         if (parsed.taskId || parsed.insight) {
           if (parsed.taskId) setSelectedTaskId(parsed.taskId)
           setSource("insight")
+
+          // 如果有具体的洞察信息，直接设置
+          if (parsed.insight) {
+            setSelectedInsight(parsed.insight)
+          }
+
+          // 如果有洞察列表，直接设置可用洞察（避免等待API加载）
+          if (parsed.insights && Array.isArray(parsed.insights) && parsed.insights.length > 0) {
+            setAvailableInsights(parsed.insights)
+          }
+
+          // 清除缓存，避免重复读取
+          sessionStorage.removeItem("content-creation-source")
         }
       }
     } catch (err) {
@@ -406,12 +422,16 @@ export default function ContentCreationPage() {
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 90) { clearInterval(progressInterval); return prev }
-          return prev + 10
+          return prev + 5
         })
       }, 500)
 
-      setProgress(20)
+      setProgress(10)
       setProgressMessage("AI正在创作文章...")
+
+      // 获取 AI API 配置和提示词设置
+      const aiConfig = getAiApiConfig()
+      const promptSettings = getPromptSettings()
 
       const response = await fetch("/api/content-generation", {
         method: "POST",
@@ -423,24 +443,83 @@ export default function ContentCreationPage() {
           style,
           imageCount: parseInt(imageCount),
           taskId: selectedTaskId,
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model,
+          // 传递用户自定义的文章生成提示词模板
+          customPromptTemplate: promptSettings.articlePrompt || undefined,
         }),
       })
 
-      clearInterval(progressInterval)
-
       if (!response.ok) {
+        clearInterval(progressInterval)
         const errorData = await response.json()
         throw new Error(errorData.error || "生成失败")
       }
-
-      setProgress(100)
-      setProgressMessage("创作完成！")
 
       const data = await response.json()
       setGeneratedTitle(data.data.title)
       setGeneratedContent(data.data.content)
       setGeneratedSummary(data.data.summary || "")
-      setGeneratedImages(data.data.images || [])
+
+      setProgress(60)
+      setProgressMessage("文章创作完成，正在生成配图...")
+
+      // 如果需要配图，调用硅基流动API生成真实图片
+      let generatedImgUrls: string[] = []
+      const numImages = parseInt(imageCount)
+
+      if (numImages > 0) {
+        const imageApiConfig = getImageApiConfig()
+        const promptSettings = getPromptSettings()
+
+        // 只有配置了硅基流动API才生成真实图片
+        if (imageApiConfig.siliconflow?.apiKey) {
+          try {
+            // 使用文章标题和主题生成配图提示词
+            let imagePrompt = `专业的文章配图，主题：${topic}，风格：现代商业插图，简洁大气`
+
+            // 如果用户配置了自定义配图提示词模板，使用用户的模板
+            if (promptSettings.illustrationPrompt) {
+              imagePrompt = promptSettings.illustrationPrompt.replace('{title}', topic)
+            }
+
+            setProgressMessage(`正在生成配图 (共${numImages}张)...`)
+
+            const imageResponse = await fetch("/api/image-generation/siliconflow", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prompt: imagePrompt,
+                negativePrompt: "低质量, 模糊, 变形, 文字, 水印, 丑陋",
+                imageSize: "1024x1024",
+                numImages: numImages,
+                apiUrl: imageApiConfig.siliconflow.apiUrl || undefined,
+                apiKey: imageApiConfig.siliconflow.apiKey,
+                model: imageApiConfig.siliconflow.model || undefined,
+              }),
+            })
+
+            if (imageResponse.ok) {
+              const imageData = await imageResponse.json()
+              generatedImgUrls = imageData.data?.images || []
+              console.log(`✅ 生成了 ${generatedImgUrls.length} 张配图`)
+            } else {
+              console.warn("配图生成失败，使用占位符")
+            }
+          } catch (imgError) {
+            console.error("配图生成出错:", imgError)
+          }
+        } else {
+          console.log("未配置硅基流动API，跳过配图生成")
+        }
+      }
+
+      setGeneratedImages(generatedImgUrls)
+
+      clearInterval(progressInterval)
+      setProgress(100)
+      setProgressMessage("创作完成！")
 
       setTimeout(() => {
         setIsCreating(false)
@@ -821,7 +900,7 @@ export default function ContentCreationPage() {
             </Card>
           )}
 
-          {/* AI生成结果 - 编辑/预览/发布 */}
+          {/* AI生成结果 - 多平台发布 */}
           {generatedContent && !isCreating && (
             <div className="space-y-4">
               {/* 顶部工具栏 */}
@@ -830,28 +909,9 @@ export default function ContentCreationPage() {
                   <h2 className="text-2xl font-bold">编辑与发布</h2>
                   <Badge variant="secondary">AI生成</Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={handleAICreate} disabled={isWorking}>
-                    <RefreshCw className="mr-2 h-4 w-4" />重新生成
-                  </Button>
-                  <Button onClick={handleSaveAI} disabled={isWorking} variant="outline">
-                    {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : <><Save className="mr-2 h-4 w-4" />保存草稿</>}
-                  </Button>
-                  {wechatAccounts.map((account, index) => (
-                    <Button
-                      key={account.id}
-                      onClick={() => handlePublishAI(account)}
-                      disabled={isWorking}
-                      className={index % 2 === 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-teal-600 hover:bg-teal-700"}
-                    >
-                      {publishingMap[account.id] ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</>
-                      ) : (
-                        <><Send className="mr-2 h-4 w-4" />发布到{account.name}</>
-                      )}
-                    </Button>
-                  ))}
-                </div>
+                <Button variant="outline" onClick={handleAICreate} disabled={isWorking}>
+                  <RefreshCw className="mr-2 h-4 w-4" />重新生成原文
+                </Button>
               </div>
 
               {/* 基本信息 */}
@@ -878,28 +938,16 @@ export default function ContentCreationPage() {
                 </CardContent>
               </Card>
 
-              {/* 编辑器和预览 */}
-              <div className="grid grid-cols-2 gap-4">
-                <Card className="flex flex-col">
-                  <CardHeader className="pb-3"><CardTitle>编辑内容</CardTitle></CardHeader>
-                  <CardContent className="flex-1">
-                    <Textarea
-                      value={generatedContent}
-                      onChange={(e) => setGeneratedContent(e.target.value)}
-                      placeholder="编辑文章内容..."
-                      className="font-mono text-sm w-full resize-none min-h-[600px]"
-                    />
-                  </CardContent>
-                </Card>
-                <Card className="flex flex-col">
-                  <CardHeader className="pb-3"><CardTitle>公众号样式预览</CardTitle></CardHeader>
-                  <CardContent className="flex-1">
-                    <div className="border rounded-lg p-6 bg-white min-h-[600px] overflow-auto">
-                      <div dangerouslySetInnerHTML={{ __html: aiPreviewHtml }} />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* 多平台发布面板 */}
+              <MultiPlatformPublish
+                originalContent={generatedContent}
+                originalTitle={generatedTitle}
+                originalSummary={generatedSummary}
+                onSave={handleSaveAI}
+                onPublish={handlePublishAI}
+                saving={saving}
+                publishingMap={publishingMap}
+              />
             </div>
           )}
         </>
@@ -915,20 +963,29 @@ export default function ContentCreationPage() {
               <Button onClick={handleSaveManual} disabled={isWorking} variant="outline">
                 {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : <><Save className="mr-2 h-4 w-4" />保存</>}
               </Button>
-              {wechatAccounts.map((account, index) => (
-                <Button
-                  key={account.id}
-                  onClick={() => handlePublish(account)}
-                  disabled={isWorking}
-                  className={index % 2 === 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-teal-600 hover:bg-teal-700"}
-                >
-                  {publishingMap[account.id] ? (
-                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</>
-                  ) : (
-                    <><Send className="mr-2 h-4 w-4" />发布到{account.name}</>
-                  )}
-                </Button>
-              ))}
+              {wechatAccounts.length > 0 ? (
+                wechatAccounts.map((account, index) => (
+                  <Button
+                    key={account.id}
+                    onClick={() => handlePublish(account)}
+                    disabled={isWorking}
+                    className={index % 2 === 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-teal-600 hover:bg-teal-700"}
+                  >
+                    {publishingMap[account.id] ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />发布中...</>
+                    ) : (
+                      <><Send className="mr-2 h-4 w-4" />发布到{account.name}</>
+                    )}
+                  </Button>
+                ))
+              ) : (
+                <Link href="/settings?tab=platform">
+                  <Button variant="outline" className="text-muted-foreground">
+                    <Send className="mr-2 h-4 w-4" />
+                    去设置中添加公众号
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 

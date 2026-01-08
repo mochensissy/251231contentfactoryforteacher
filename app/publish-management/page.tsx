@@ -53,6 +53,7 @@ import { zhCN } from "date-fns/locale"
 import { useRouter } from "next/navigation"
 import { QRCodeDialog } from "@/components/qr-code-dialog"
 import { ArticlePreviewDialog } from "@/components/article-preview-dialog"
+import { getEnabledWechatAccounts, type WechatAccount } from "@/lib/wechat-accounts"
 
 type ArticleStatus = "draft" | "pending_review" | "published"
 
@@ -109,9 +110,15 @@ export default function PublishManagementPage() {
   const [editingArticle, setEditingArticle] = useState<Article | null>(null)
   const [newStatus, setNewStatus] = useState<ArticleStatus>("draft")
 
-  // 加载文章列表
+  // 公众号配置
+  const [wechatAccounts, setWechatAccounts] = useState<WechatAccount[]>([])
+
+  // 加载文章列表和公众号配置
   useEffect(() => {
     loadArticles()
+    // 加载公众号配置
+    const accounts = getEnabledWechatAccounts()
+    setWechatAccounts(accounts)
   }, [])
 
   const loadArticles = async () => {
@@ -129,66 +136,34 @@ export default function PublishManagementPage() {
     }
   }
 
-  // 发布到公众号（HR进化派）
-  const handlePublishToWechat = async (articleId: number) => {
+  // 发布到公众号（动态账号）
+  const handlePublishToWechatGeneric = async (articleId: number, account: WechatAccount) => {
     if (publishingId) {
       alert('有文章正在发布中，请稍候...')
       return
     }
 
-    const confirmed = confirm('确定要发布到HR进化派公众号吗？\n\n流程：AI排版（褐黄色） → 生成封面 → 推送到草稿箱\n预计需要30-60秒')
+    const confirmed = confirm(`确定要发布到【${account.name}】公众号吗？\n\n流程：AI排版 → 生成封面 → 推送到草稿箱\n预计需要30-60秒`)
     if (!confirmed) return
 
     setPublishingId(articleId)
-    setPublishingPlatform('wechat')
+    setPublishingPlatform(`wechat_${account.id}`)
 
     try {
-      const response = await fetch('/api/publish/wechat', {
+      const response = await fetch('/api/publish/wechat-generic', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ articleId }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        alert('✅ ' + data.data.message)
-        // 刷新列表
-        loadArticles()
-      } else {
-        alert('❌ 发布失败：' + (data.error || '未知错误'))
-      }
-    } catch (error) {
-      console.error('发布失败:', error)
-      alert('❌ 发布失败：' + (error instanceof Error ? error.message : '网络错误'))
-    } finally {
-      setPublishingId(null)
-      setPublishingPlatform(null)
-    }
-  }
-
-  // 发布到公众号（闻思修AI手记）
-  const handlePublishToWechatPGZ = async (articleId: number) => {
-    if (publishingId) {
-      alert('有文章正在发布中，请稍候...')
-      return
-    }
-
-    const confirmed = confirm('确定要发布到闻思修AI手记公众号吗？\n\n流程：AI排版（赭黄色，与HR进化派一致） → 生成封面 → 推送到草稿箱\n预计需要30-60秒')
-    if (!confirmed) return
-
-    setPublishingId(articleId)
-    setPublishingPlatform('wechat_pgz')
-
-    try {
-      const response = await fetch('/api/publish/wechat-pgz', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ articleId }),
+        body: JSON.stringify({
+          articleId,
+          account: {
+            name: account.name,
+            appId: account.appId,
+            appSecret: account.appSecret,
+            webhookUrl: account.webhookUrl,
+          }
+        }),
       })
 
       const data = await response.json()
@@ -540,40 +515,36 @@ export default function PublishManagementPage() {
                             </DropdownMenuItem>
                             {article.status !== "published" && (
                               <>
-                                <DropdownMenuItem
-                                  className="text-green-600"
-                                  onClick={() => handlePublishToWechat(article.id)}
-                                  disabled={publishingId !== null}
-                                >
-                                  {publishingId === article.id && publishingPlatform === 'wechat' ? (
-                                    <>
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      发布中...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Share2 className="mr-2 h-4 w-4" />
-                                      发布到公众号（HR进化派）
-                                    </>
-                                  )}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-teal-600"
-                                  onClick={() => handlePublishToWechatPGZ(article.id)}
-                                  disabled={publishingId !== null}
-                                >
-                                  {publishingId === article.id && publishingPlatform === 'wechat_pgz' ? (
-                                    <>
-                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      发布中...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Share2 className="mr-2 h-4 w-4" />
-                                      发布到公众号（闻思修AI手记）
-                                    </>
-                                  )}
-                                </DropdownMenuItem>
+                                {/* 动态生成公众号发布选项 */}
+                                {wechatAccounts.length > 0 ? (
+                                  wechatAccounts.map((account, index) => (
+                                    <DropdownMenuItem
+                                      key={account.id}
+                                      className={index === 0 ? "text-green-600" : "text-teal-600"}
+                                      onClick={() => handlePublishToWechatGeneric(article.id, account)}
+                                      disabled={publishingId !== null}
+                                    >
+                                      {publishingId === article.id && publishingPlatform === `wechat_${account.id}` ? (
+                                        <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                          发布中...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Share2 className="mr-2 h-4 w-4" />
+                                          发布到公众号（{account.name}）
+                                        </>
+                                      )}
+                                    </DropdownMenuItem>
+                                  ))
+                                ) : (
+                                  <DropdownMenuItem
+                                    className="text-muted-foreground"
+                                    disabled
+                                  >
+                                    请先在设置中配置公众号
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   className="text-orange-600"
                                   onClick={() => handlePublishToXiaohongshu(article.id)}

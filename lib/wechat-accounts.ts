@@ -9,32 +9,13 @@ export interface WechatAccount {
     enabled: boolean
 }
 
-const STORAGE_KEY = 'wechat_accounts'
+// 使用与设置页面相同的 localStorage key
+const STORAGE_KEY = 'wechat-accounts'
 const MAX_ACCOUNTS = 5
-
-// 默认账号配置（用于初始化）
-const DEFAULT_ACCOUNTS: WechatAccount[] = [
-    {
-        id: 'hr-jinhuapai',
-        name: 'HR进化派',
-        appId: 'wx2da3d685de860b66',
-        appSecret: '53d963db6d28a23b51ba9ebdc97f2b44',
-        webhookUrl: 'https://n8n.aiwensi.com/webhook/publish-to-wechat',
-        enabled: true,
-    },
-    {
-        id: 'wensixiu-ai',
-        name: '闻思修AI手记',
-        appId: '',
-        appSecret: '',
-        webhookUrl: 'https://n8n.aiwensi.com/webhook/publish-to-pgz',
-        enabled: true,
-    },
-]
 
 // 获取所有账号
 export function getWechatAccounts(): WechatAccount[] {
-    if (typeof window === 'undefined') return DEFAULT_ACCOUNTS
+    if (typeof window === 'undefined') return []
 
     try {
         const stored = localStorage.getItem(STORAGE_KEY)
@@ -45,9 +26,8 @@ export function getWechatAccounts(): WechatAccount[] {
         console.error('读取公众号配置失败:', e)
     }
 
-    // 首次使用，初始化默认配置
-    saveWechatAccounts(DEFAULT_ACCOUNTS)
-    return DEFAULT_ACCOUNTS
+    // 如果没有配置，返回空数组（用户需要先在设置中添加）
+    return []
 }
 
 // 获取已启用的账号
