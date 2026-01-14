@@ -19,6 +19,11 @@ model AnalysisTask {
   analyzedAt      DateTime? @map("analyzed_at")
   createdAt       DateTime  @default(now()) @map("created_at")
 
+  // 来源信息
+  sourceType      String?   @map("source_type") // keyword / account_history
+  mpName          String?   @map("mp_name")     // 公众号名称
+  mpGhid          String?   @map("mp_ghid")     // 公众号ID
+
   report          InsightReport?
 
   @@map("analysis_tasks")
@@ -42,6 +47,10 @@ model InsightReport {
   articleSummaries        String?   @map("article_summaries") // JSON格式 - 文章摘要
   enhancedInsights        String?   @map("enhanced_insights") // JSON格式 - 增强洞察
 
+  // 统计数据
+  readDistribution        String?   @map("read_distribution")  // JSON格式 - 阅读量分布
+  timeDistribution        String?   @map("time_distribution")  // JSON格式 - 发布时间分布
+
   createdAt               DateTime  @default(now()) @map("created_at")
 
   task                    AnalysisTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -56,6 +65,7 @@ model Article {
   title           String
   content         String
   summary         String?
+  platform        String    @default("wechat") // wechat/xiaohongshu/twitter
   source          String    @default("ai_generated") // ai_generated/imported
   status          String    @default("draft") // draft/pending_review/published
   images          String?   // JSON格式

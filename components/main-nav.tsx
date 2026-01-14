@@ -9,7 +9,6 @@ const navigation = [
   { name: "首页", href: "/", icon: Home },
   { name: "选题分析", href: "/topic-analysis", icon: BarChart3 },
   { name: "内容创作", href: "/content-creation", icon: FileEdit },
-  { name: "视频脚本", href: "/video-script", icon: Video },
   { name: "文章库", href: "/publish-management", icon: FolderOpen },
   { name: "设置", href: "/settings", icon: Settings },
 ]

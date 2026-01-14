@@ -199,3 +199,46 @@ export function saveImageApiConfig(config: Partial<ImageApiConfig>): void {
         console.error('保存图片API配置失败:', e)
     }
 }
+
+// 小红书发布API配置接口
+export interface XiaohongshuApiConfig {
+    apiUrl: string
+    apiKey: string
+}
+
+const XIAOHONGSHU_API_KEY = 'xiaohongshu-api-config'
+
+// 获取小红书发布API配置
+export function getXiaohongshuApiConfig(): XiaohongshuApiConfig {
+    const defaults: XiaohongshuApiConfig = {
+        apiUrl: 'https://note.limyai.com/api/openapi/publish_note',
+        apiKey: '',
+    }
+
+    if (typeof window === 'undefined') {
+        return defaults
+    }
+
+    try {
+        const saved = localStorage.getItem(XIAOHONGSHU_API_KEY)
+        if (saved) {
+            const parsed = JSON.parse(saved)
+            return { ...defaults, ...parsed }
+        }
+    } catch (e) {
+        console.error('读取小红书API配置失败:', e)
+    }
+    return defaults
+}
+
+// 保存小红书发布API配置
+export function saveXiaohongshuApiConfig(config: Partial<XiaohongshuApiConfig>): void {
+    if (typeof window === 'undefined') return
+    try {
+        const current = getXiaohongshuApiConfig()
+        const updated = { ...current, ...config }
+        localStorage.setItem(XIAOHONGSHU_API_KEY, JSON.stringify(updated))
+    } catch (e) {
+        console.error('保存小红书API配置失败:', e)
+    }
+}

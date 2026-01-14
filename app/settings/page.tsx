@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Settings, Key, Link as LinkIcon, Save, Download, Upload, CheckCircle2, XCircle, Loader2, Plus, Trash2 } from "lucide-react"
 import { FORMATTING_STYLE_PRESETS, WRITING_TONE_PRESETS, PLATFORM_ARTICLE_PRESETS, VIDEO_SCRIPT_TYPE_PRESETS, FormattingStyleKey, WritingToneKey, PlatformArticleKey, VideoScriptTypeKey } from "@/lib/prompt-presets"
-import { saveWechatArticleApiConfig, getWechatArticleApiConfig, saveAiApiConfig, getAiApiConfig, savePromptSettings, getPromptSettings, saveImageApiConfig, getImageApiConfig } from "@/lib/api-config"
+import { saveWechatArticleApiConfig, getWechatArticleApiConfig, saveAiApiConfig, getAiApiConfig, savePromptSettings, getPromptSettings, saveImageApiConfig, getImageApiConfig, saveXiaohongshuApiConfig, getXiaohongshuApiConfig } from "@/lib/api-config"
 import { AI_MODEL_PRESETS, getModelById, getPriceLevelText } from "@/lib/ai-model-presets"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -83,53 +83,114 @@ export default function SettingsPage() {
     }
   }, [])
 
+  // AI API 配置状态
+  const [aiApiUrl, setAiApiUrl] = useState('')
+  const [aiApiKey, setAiApiKey] = useState('')
+
+  // 公众号文章 API 配置状态
+  const [wechatArticleApiUrl, setWechatArticleApiUrl] = useState('')
+  const [wechatArticleApiKey, setWechatArticleApiKey] = useState('')
+
+  // 硅基流动 API 配置状态
+  const [siliconflowApiUrl, setSiliconflowApiUrl] = useState('')
+  const [siliconflowApiKey, setSiliconflowApiKey] = useState('')
+  const [siliconflowModel, setSiliconflowModel] = useState('')
+
+  // 阿里云 DashScope 配置状态
+  const [dashscopeApiUrl, setDashscopeApiUrl] = useState('')
+  const [dashscopeApiKey, setDashscopeApiKey] = useState('')
+
+  // 小红书配置状态
+  const [xhsApiUrl, setXhsApiUrl] = useState('')
+  const [xhsApiKey, setXhsApiKey] = useState('')
+
+  // 提示词状态
+  const [articlePrompt, setArticlePrompt] = useState('')
+  const [coverPrompt, setCoverPrompt] = useState('')
+  const [illustrationPrompt, setIllustrationPrompt] = useState('')
+  const [formattingPrompt, setFormattingPrompt] = useState('')
+  const [videoScriptPrompt, setVideoScriptPrompt] = useState('')
+
+  // 从localStorage加载配置
+  useEffect(() => {
+    const saved = localStorage.getItem('wechat-accounts')
+    if (saved) {
+      try {
+        const accounts = JSON.parse(saved) as WechatAccount[]
+        setWechatAccounts(accounts)
+        if (accounts.length > 0) {
+          setActiveAccountId(accounts[0].id)
+        }
+      } catch (e) {
+        console.error('Failed to load wechat accounts:', e)
+      }
+    }
+  }, [])
+
+  // 默认提示词常量
+  const DEFAULT_COVER_PROMPT = `封面要求（务必遵循）：
+1) 核心主题：封面必须围绕"{title}"，体现与文章主题直接相关的场景/物件/动作，不能是泛化风景。
+2) 具体元素：优先加入与主题直连的事物（产品/工具/人物行为/职场或业务场景），避免无关建筑与自然风光。
+3) 风格：保持水彩或插画风格，画面简洁专业。
+4) 禁止：纯风景、度假/旅游/山水/公园/海边/城市天际线等无关画面；禁止幼稚卡通。
+5) 色调：现代、清爽、积极，突出主题。
+
+图像风格指南：
+- 采用现代的、写实或半写实的企业/商业/咨询公司专业摄影风格
+- 禁止字面化表达，必须使用隐喻
+- 氛围必须是专业、理性、积极向上、沉稳的
+- 构图必须简洁、大气
+- 绝对禁止生成任何诡异、阴暗、恐怖、幼稚、卡通的元素
+- 不要出现人物图像`
+
+  const DEFAULT_ILLUSTRATION_PROMPT = `你是一位专业的视觉设计师。请根据以下文章内容，生成配图的中文提示词。
+
+要求：
+1. 每张配图的提示词应该对应文章的不同部分或关键内容
+2. 提示词要具体、生动，能够准确描述画面内容
+3. 提示词应该使用中文，便于AI图像生成
+4. 提示词长度控制在50字以内
+5. 图片风格应该符合文章主题（专业、清新、科技感等）
+6. 避免过于抽象的概念，要描述具体的视觉元素
+
+风格指南：
+- 保持与文章主题高度相关
+- 画面简洁大气，避免杂乱
+- 色彩和谐，符合专业调性
+- 可以使用适当的视觉隐喻
+- 避免过于幼稚或卡通的风格`
+
   // 加载已保存的 API 配置
   useEffect(() => {
     // 公众号文章 API 配置
     const wechatArticleConfig = getWechatArticleApiConfig()
-    if (wechatArticleConfig.apiUrl) {
-      const urlInput = document.getElementById('wechat-api-url') as HTMLInputElement
-      if (urlInput) urlInput.value = wechatArticleConfig.apiUrl
-    }
-    if (wechatArticleConfig.apiKey) {
-      const keyInput = document.getElementById('wechat-api-key') as HTMLInputElement
-      if (keyInput) keyInput.value = wechatArticleConfig.apiKey
-    }
+    setWechatArticleApiUrl(wechatArticleConfig.apiUrl || 'https://www.dajiala.com/fbmain/monitor/v3/kw_search')
+    setWechatArticleApiKey(wechatArticleConfig.apiKey || 'JZLc29ca3bfdebd2bf3')
 
     // AI API 配置
     const aiConfig = getAiApiConfig()
-    if (aiConfig.apiUrl) {
-      const urlInput = document.getElementById('ai-api-url') as HTMLInputElement
-      if (urlInput) urlInput.value = aiConfig.apiUrl
-    }
-    if (aiConfig.apiKey) {
-      const keyInput = document.getElementById('ai-api-key') as HTMLInputElement
-      if (keyInput) keyInput.value = aiConfig.apiKey
-    }
+    setAiApiUrl(aiConfig.apiUrl || 'https://openrouter.ai/api/v1/chat/completions')
+    setAiApiKey(aiConfig.apiKey || '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')
     if (aiConfig.model) {
-      // 检查是否是预设模型
       const presetModel = getModelById(aiConfig.model)
       if (presetModel) {
         setSelectedAiModel(aiConfig.model)
         setUseCustomModel(false)
       } else {
-        // 自定义模型
         setUseCustomModel(true)
         setCustomModelId(aiConfig.model)
       }
+    } else {
+      setSelectedAiModel('google/gemini-2.5-flash-lite')
     }
 
-    // 加载选题分析默认设置
+    // 选题分析默认设置
     try {
       const savedDefaults = localStorage.getItem('analysis-defaults')
       if (savedDefaults) {
         const defaults = JSON.parse(savedDefaults)
-        if (defaults.analysisCount) {
-          setAnalysisCount(defaults.analysisCount)
-        }
-        if (defaults.insightsCount) {
-          setInsightsCount(defaults.insightsCount)
-        }
+        if (defaults.analysisCount) setAnalysisCount(defaults.analysisCount)
+        if (defaults.insightsCount) setInsightsCount(defaults.insightsCount)
       }
     } catch (e) {
       console.error('加载分析默认设置失败:', e)
@@ -137,49 +198,61 @@ export default function SettingsPage() {
 
     // 加载提示词设置
     try {
-      const promptSettings = getPromptSettings()
-      if (promptSettings.coverPrompt) {
-        const coverPromptEl = document.getElementById('cover-image-prompt') as HTMLTextAreaElement
-        if (coverPromptEl) coverPromptEl.value = promptSettings.coverPrompt
+      const ps = getPromptSettings()
+
+      const platform = (ps.selectedPlatform || 'wechat') as PlatformArticleKey
+      const tone = (ps.selectedWritingTone || 'professional') as WritingToneKey
+      const style = (ps.selectedFormattingStyle || 'ochre') as FormattingStyleKey
+
+      setSelectedPlatform(platform)
+      setSelectedWritingTone(tone)
+      setSelectedFormattingStyle(style)
+
+      setCoverPrompt(ps.coverPrompt || DEFAULT_COVER_PROMPT)
+      setIllustrationPrompt(ps.illustrationPrompt || DEFAULT_ILLUSTRATION_PROMPT)
+
+      // 文章提示词逻辑
+      if (ps.articlePrompt) {
+        setArticlePrompt(ps.articlePrompt)
+      } else {
+        if (platform === 'wechat') {
+          setArticlePrompt(WRITING_TONE_PRESETS[tone].prompt)
+        } else {
+          const preset = PLATFORM_ARTICLE_PRESETS[platform]
+          if ('prompt' in preset) {
+            setArticlePrompt((preset as any).prompt)
+          } else {
+            setArticlePrompt(WRITING_TONE_PRESETS[tone].prompt)
+          }
+        }
       }
-      if (promptSettings.illustrationPrompt) {
-        const illPromptEl = document.getElementById('article-image-prompt') as HTMLTextAreaElement
-        if (illPromptEl) illPromptEl.value = promptSettings.illustrationPrompt
-      }
-      // 恢复选择项
-      if (promptSettings.selectedPlatform) {
-        setSelectedPlatform(promptSettings.selectedPlatform as PlatformArticleKey)
-      }
-      if (promptSettings.selectedWritingTone) {
-        setSelectedWritingTone(promptSettings.selectedWritingTone as WritingToneKey)
-      }
-      if (promptSettings.selectedFormattingStyle) {
-        setSelectedFormattingStyle(promptSettings.selectedFormattingStyle as 'ochre' | 'blue' | 'monochrome' | 'green')
-      }
+
+      setFormattingPrompt(ps.formattingPrompt || FORMATTING_STYLE_PRESETS[style].prompt)
+
+      // 视频脚本默认为 knowledge
+      const videoType = 'knowledge'
+      setVideoScriptPrompt(ps.videoScriptPrompt || VIDEO_SCRIPT_TYPE_PRESETS[videoType].prompt)
+
     } catch (e) {
       console.error('加载提示词设置失败:', e)
     }
 
-    // 加载图片API配置
-    try {
-      const imageConfig = getImageApiConfig()
-      if (imageConfig.siliconflow) {
-        const sfUrlEl = document.getElementById('siliconflow-api-url') as HTMLInputElement
-        const sfKeyEl = document.getElementById('siliconflow-api-key') as HTMLInputElement
-        const sfModelEl = document.getElementById('siliconflow-model') as HTMLInputElement
-        if (sfUrlEl && imageConfig.siliconflow.apiUrl) sfUrlEl.value = imageConfig.siliconflow.apiUrl
-        if (sfKeyEl && imageConfig.siliconflow.apiKey) sfKeyEl.value = imageConfig.siliconflow.apiKey
-        if (sfModelEl && imageConfig.siliconflow.model) sfModelEl.value = imageConfig.siliconflow.model
-      }
-      if (imageConfig.dashscope) {
-        const dsUrlEl = document.getElementById('dashscope-api-url') as HTMLInputElement
-        const dsKeyEl = document.getElementById('dashscope-api-key') as HTMLInputElement
-        if (dsUrlEl && imageConfig.dashscope.apiUrl) dsUrlEl.value = imageConfig.dashscope.apiUrl
-        if (dsKeyEl && imageConfig.dashscope.apiKey) dsKeyEl.value = imageConfig.dashscope.apiKey
-      }
-    } catch (e) {
-      console.error('加载图片API配置失败:', e)
+    // 图片API配置
+    const imageConfig = getImageApiConfig()
+    if (imageConfig.siliconflow) {
+      setSiliconflowApiUrl(imageConfig.siliconflow.apiUrl || 'https://api.siliconflow.cn/v1/images/generations')
+      setSiliconflowApiKey(imageConfig.siliconflow.apiKey || 'sk-tsfffvfoywxhvqmfwwuamopclmwhdqrcldogntbimstltvly')
+      setSiliconflowModel(imageConfig.siliconflow.model || 'Kwai-Kolors/Kolors')
     }
+    if (imageConfig.dashscope) {
+      setDashscopeApiUrl(imageConfig.dashscope.apiUrl || 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis')
+      setDashscopeApiKey(imageConfig.dashscope.apiKey || 'sk-4e36b402fb234fbcbead0d355bb59561')
+    }
+
+    // 小红书API配置
+    const xhsConfig = getXiaohongshuApiConfig()
+    setXhsApiUrl(xhsConfig.apiUrl || 'https://note.limyai.com/api/openapi/publish_note')
+    setXhsApiKey(xhsConfig.apiKey || '')
   }, [])
 
   // 保存配置到localStorage
@@ -196,8 +269,8 @@ export default function SettingsPage() {
     const newAccount: WechatAccount = {
       id: `account-${Date.now()}`,
       name: `公众号${wechatAccounts.length + 1}`,
-      webhookUrl: 'https://your-n8n-server.com/webhook/...',
-      appId: 'wx...',
+      webhookUrl: '',
+      appId: '',
       appSecret: '',
       enabled: true,
     }
@@ -215,7 +288,6 @@ export default function SettingsPage() {
     const updatedAccounts = wechatAccounts.filter(a => a.id !== id)
     setWechatAccounts(updatedAccounts)
     saveAccountsToStorage(updatedAccounts)
-    // 如果删除的是当前选中的账号，选中第一个
     if (activeAccountId === id) {
       setActiveAccountId(updatedAccounts[0]?.id || null)
     }
@@ -234,40 +306,41 @@ export default function SettingsPage() {
   const activeAccount = wechatAccounts.find(a => a.id === activeAccountId)
 
   const handleSave = () => {
-    // 保存选题分析默认设置到 localStorage
-    const analysisDefaults = {
-      analysisCount: analysisCount,
-      insightsCount: insightsCount,
-    }
-    localStorage.setItem('analysis-defaults', JSON.stringify(analysisDefaults))
+    // 保存选题分析默认设置
+    localStorage.setItem('analysis-defaults', JSON.stringify({ analysisCount, insightsCount }))
 
-    // 保存提示词设置（包含选择项和自定义提示词）
-    const coverPrompt = (document.getElementById('cover-image-prompt') as HTMLTextAreaElement)?.value || ''
-    const illustrationPrompt = (document.getElementById('article-image-prompt') as HTMLTextAreaElement)?.value || ''
-    const articlePrompt = (document.getElementById('article-prompt') as HTMLTextAreaElement)?.value || ''
-
+    // 保存提示词设置
     savePromptSettings({
       coverPrompt,
       illustrationPrompt,
       articlePrompt,
+      formattingPrompt,
       selectedPlatform,
       selectedWritingTone,
       selectedFormattingStyle,
     })
 
-    // 保存硅基流动API配置
-    const siliconflowApiUrl = (document.getElementById('siliconflow-api-url') as HTMLInputElement)?.value || ''
-    const siliconflowApiKey = (document.getElementById('siliconflow-api-key') as HTMLInputElement)?.value || ''
-    const siliconflowModel = (document.getElementById('siliconflow-model') as HTMLInputElement)?.value || ''
+    // 保存 AI 配置
+    saveAiApiConfig({
+      apiUrl: aiApiUrl,
+      apiKey: aiApiKey,
+      model: useCustomModel ? customModelId : selectedAiModel
+    })
 
-    // 保存阿里云通义万相API配置
-    const dashscopeApiUrl = (document.getElementById('dashscope-api-url') as HTMLInputElement)?.value || ''
-    const dashscopeApiKey = (document.getElementById('dashscope-api-key') as HTMLInputElement)?.value || ''
+    // 保存公众号文章数据接口
+    saveWechatArticleApiConfig({
+      apiUrl: wechatArticleApiUrl,
+      apiKey: wechatArticleApiKey
+    })
 
+    // 保存图片API配置
     saveImageApiConfig({
       siliconflow: { apiUrl: siliconflowApiUrl, apiKey: siliconflowApiKey, model: siliconflowModel },
       dashscope: { apiUrl: dashscopeApiUrl, apiKey: dashscopeApiKey },
     })
+
+    // 保存小红书发布API配置
+    saveXiaohongshuApiConfig({ apiUrl: xhsApiUrl, apiKey: xhsApiKey })
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -328,8 +401,6 @@ export default function SettingsPage() {
   const testAiConnection = async () => {
     setAiTestStatus('testing')
     try {
-      const apiUrl = (document.getElementById('ai-api-url') as HTMLInputElement)?.value
-      const apiKey = (document.getElementById('ai-api-key') as HTMLInputElement)?.value
       // 使用选中的模型（预设或自定义）
       const model = useCustomModel ? customModelId : selectedAiModel
 
@@ -340,11 +411,11 @@ export default function SettingsPage() {
         return
       }
 
-      const response = await fetch(apiUrl, {
+      const response = await fetch(aiApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${aiApiKey}`,
         },
         body: JSON.stringify({
           model: model,
@@ -354,8 +425,7 @@ export default function SettingsPage() {
       })
 
       if (response.ok) {
-        // 保存 AI API 配置到 localStorage
-        saveAiApiConfig({ apiUrl, apiKey, model })
+        saveAiApiConfig({ apiUrl: aiApiUrl, apiKey: aiApiKey, model })
         setAiTestStatus('success')
         setTimeout(() => setAiTestStatus('idle'), 3000)
       } else {
@@ -375,10 +445,7 @@ export default function SettingsPage() {
   const testWechatArticleConnection = async () => {
     setWechatArticleTestStatus('testing')
     try {
-      const apiUrl = (document.getElementById('wechat-api-url') as HTMLInputElement)?.value
-      const apiKey = (document.getElementById('wechat-api-key') as HTMLInputElement)?.value
-
-      if (!apiKey) {
+      if (!wechatArticleApiKey) {
         alert('请先填写 API Key')
         setWechatArticleTestStatus('error')
         setTimeout(() => setWechatArticleTestStatus('idle'), 3000)
@@ -389,28 +456,23 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          keyword: '微信公众号', // 使用更长的关键词
+          keyword: '微信公众号',
           page: 1,
-          apiUrl: apiUrl,
-          apiKey: apiKey,
+          apiUrl: wechatArticleApiUrl,
+          apiKey: wechatArticleApiKey,
         }),
       })
 
       const data = await response.json().catch(() => ({}))
 
-      // 如果API返回了响应（无论成功还是业务错误），说明连接是通的
       if (response.ok && data.success) {
-        // 保存配置到 localStorage
-        saveWechatArticleApiConfig({ apiUrl, apiKey })
+        saveWechatArticleApiConfig({ apiUrl: wechatArticleApiUrl, apiKey: wechatArticleApiKey })
         setWechatArticleTestStatus('success')
       } else if (data.error && (data.error.includes('关键词') || data.error.includes('keyword'))) {
-        // API返回了关键词相关的业务错误，说明连接是成功的
-        saveWechatArticleApiConfig({ apiUrl, apiKey })
+        saveWechatArticleApiConfig({ apiUrl: wechatArticleApiUrl, apiKey: wechatArticleApiKey })
         setWechatArticleTestStatus('success')
       } else if (response.status === 400 && data.error) {
-        // 其他400错误也可能是API返回的业务错误，说明连接成功
-        console.log('API业务错误（但连接成功）:', data.error)
-        saveWechatArticleApiConfig({ apiUrl, apiKey })
+        saveWechatArticleApiConfig({ apiUrl: wechatArticleApiUrl, apiKey: wechatArticleApiKey })
         setWechatArticleTestStatus('success')
       } else {
         console.error('连接失败:', response.status, data)
@@ -430,18 +492,14 @@ export default function SettingsPage() {
   const testSiliconflowConnection = async () => {
     setSiliconflowTestStatus('testing')
     try {
-      const apiUrl = (document.getElementById('siliconflow-api-url') as HTMLInputElement)?.value
-      const apiKey = (document.getElementById('siliconflow-api-key') as HTMLInputElement)?.value
-      const model = (document.getElementById('siliconflow-model') as HTMLInputElement)?.value
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch(siliconflowApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${siliconflowApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: model,
+          model: siliconflowModel,
           prompt: 'test',
           image_size: '512x512',
         }),
@@ -464,14 +522,11 @@ export default function SettingsPage() {
   const testDashscopeConnection = async () => {
     setDashscopeTestStatus('testing')
     try {
-      const apiUrl = (document.getElementById('dashscope-api-url') as HTMLInputElement)?.value
-      const apiKey = (document.getElementById('dashscope-api-key') as HTMLInputElement)?.value
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch(dashscopeApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${dashscopeApiKey}`,
           'X-DashScope-Async': 'enable',
         },
         body: JSON.stringify({
@@ -494,32 +549,44 @@ export default function SettingsPage() {
     }
   }
 
-  // 测试微信公众号配置
+  // 测试微信公众号配置（直连模式）
   const testWechatMpConnection = async () => {
     setWechatMpTestStatus('testing')
     try {
-      const apiUrl = (document.getElementById('mp-api-url') as HTMLInputElement)?.value
-
-      if (!apiUrl) {
+      if (!activeAccount) {
+        alert('请先选择或添加公众号账号')
         setWechatMpTestStatus('error')
-        setTimeout(() => setWechatMpTestStatus('idle'), 3000)
+        return
+      }
+      const { appId, appSecret } = activeAccount
+
+      if (appId && appSecret) {
+        const response = await fetch('/api/test-wechat-credential', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appId, appSecret }),
+        })
+
+        const data = await response.json()
+
+        if (response.ok && data.success) {
+          setWechatMpTestStatus('success')
+          setTimeout(() => setWechatMpTestStatus('idle'), 3000)
+          alert('✅ 微信凭证验证通过！您可以直接发布文章了。')
+        } else {
+          setWechatMpTestStatus('error')
+          alert(`❌ 凭证验证失败: ${data.error}`)
+          setTimeout(() => setWechatMpTestStatus('idle'), 3000)
+        }
         return
       }
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: true }),
-      })
+      alert('请填写 AppID 和 AppSecret 以使用直连模式')
+      setWechatMpTestStatus('error')
+      setTimeout(() => setWechatMpTestStatus('idle'), 3000)
 
-      if (response.ok || response.status === 400) { // 400也算连接成功
-        setWechatMpTestStatus('success')
-        setTimeout(() => setWechatMpTestStatus('idle'), 3000)
-      } else {
-        setWechatMpTestStatus('error')
-        setTimeout(() => setWechatMpTestStatus('idle'), 3000)
-      }
     } catch (error) {
+      console.error('测试网络错误:', error)
       setWechatMpTestStatus('error')
       setTimeout(() => setWechatMpTestStatus('idle'), 3000)
     }
@@ -558,42 +625,23 @@ export default function SettingsPage() {
   }
 
   const handleExport = () => {
-    // 导出所有配置
     const config = {
-      ai: {
-        apiUrl: (document.getElementById('ai-api-url') as HTMLInputElement)?.value,
-        apiKey: (document.getElementById('ai-api-key') as HTMLInputElement)?.value,
-        model: (document.getElementById('ai-model') as HTMLInputElement)?.value,
-      },
-      wechatArticles: {
-        apiUrl: (document.getElementById('wechat-api-url') as HTMLInputElement)?.value,
-        apiKey: (document.getElementById('wechat-api-key') as HTMLInputElement)?.value,
-      },
-      siliconflow: {
-        apiUrl: (document.getElementById('siliconflow-api-url') as HTMLInputElement)?.value,
-        apiKey: (document.getElementById('siliconflow-api-key') as HTMLInputElement)?.value,
-        model: (document.getElementById('siliconflow-model') as HTMLInputElement)?.value,
-      },
-      dashscope: {
-        apiUrl: (document.getElementById('dashscope-api-url') as HTMLInputElement)?.value,
-        apiKey: (document.getElementById('dashscope-api-key') as HTMLInputElement)?.value,
-      },
-      wechatMp: {
-        apiUrl: (document.getElementById('mp-api-url') as HTMLInputElement)?.value,
-        appId: (document.getElementById('mp-appid') as HTMLInputElement)?.value,
-        appSecret: (document.getElementById('mp-secret') as HTMLInputElement)?.value,
-      },
+      ai: { apiUrl: aiApiUrl, apiKey: aiApiKey, model: useCustomModel ? customModelId : selectedAiModel },
+      wechatArticles: { apiUrl: wechatArticleApiUrl, apiKey: wechatArticleApiKey },
+      siliconflow: { apiUrl: siliconflowApiUrl, apiKey: siliconflowApiKey, model: siliconflowModel },
+      dashscope: { apiUrl: dashscopeApiUrl, apiKey: dashscopeApiKey },
+      xhs: { apiUrl: xhsApiUrl, apiKey: xhsApiKey },
       prompts: {
-        article: (document.getElementById('article-prompt') as HTMLTextAreaElement)?.value,
-        formatting: (document.getElementById('formatting-prompt') as HTMLTextAreaElement)?.value,
+        article: articlePrompt,
+        cover: coverPrompt,
+        illustration: illustrationPrompt,
+        formatting: formattingPrompt,
       },
       defaults: {
-        wordCount: (document.getElementById('default-word-count') as HTMLInputElement)?.value,
-        style: (document.getElementById('default-style') as HTMLInputElement)?.value,
-        images: (document.getElementById('default-images') as HTMLInputElement)?.value,
-        analysisCount: (document.getElementById('analysis-count') as HTMLInputElement)?.value,
-        insightsCount: (document.getElementById('insights-count') as HTMLInputElement)?.value,
-      }
+        analysisCount,
+        insightsCount,
+      },
+      accounts: wechatAccounts
     }
 
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
@@ -617,55 +665,74 @@ export default function SettingsPage() {
           try {
             const config = JSON.parse(event.target?.result as string)
 
-            // 导入AI配置
             if (config.ai) {
-              ; (document.getElementById('ai-api-url') as HTMLInputElement).value = config.ai.apiUrl || ''
-                ; (document.getElementById('ai-api-key') as HTMLInputElement).value = config.ai.apiKey || ''
-                ; (document.getElementById('ai-model') as HTMLInputElement).value = config.ai.model || ''
+              setAiApiUrl(config.ai.apiUrl || '')
+              setAiApiKey(config.ai.apiKey || '')
+              const modelId = config.ai.model || ''
+              if (getModelById(modelId)) {
+                setSelectedAiModel(modelId)
+                setUseCustomModel(false)
+              } else {
+                setUseCustomModel(true)
+                setCustomModelId(modelId)
+              }
             }
 
-            // 导入公众号文章API配置
             if (config.wechatArticles) {
-              ; (document.getElementById('wechat-api-url') as HTMLInputElement).value = config.wechatArticles.apiUrl || ''
-                ; (document.getElementById('wechat-api-key') as HTMLInputElement).value = config.wechatArticles.apiKey || ''
+              setWechatArticleApiUrl(config.wechatArticles.apiUrl || '')
+              setWechatArticleApiKey(config.wechatArticles.apiKey || '')
             }
 
-            // 导入硅基流动配置
             if (config.siliconflow) {
-              ; (document.getElementById('siliconflow-api-url') as HTMLInputElement).value = config.siliconflow.apiUrl || ''
-                ; (document.getElementById('siliconflow-api-key') as HTMLInputElement).value = config.siliconflow.apiKey || ''
-                ; (document.getElementById('siliconflow-model') as HTMLInputElement).value = config.siliconflow.model || ''
+              setSiliconflowApiUrl(config.siliconflow.apiUrl || '')
+              setSiliconflowApiKey(config.siliconflow.apiKey || '')
+              setSiliconflowModel(config.siliconflow.model || '')
             }
 
-            // 导入阿里云通义万相配置
             if (config.dashscope) {
-              ; (document.getElementById('dashscope-api-url') as HTMLInputElement).value = config.dashscope.apiUrl || ''
-                ; (document.getElementById('dashscope-api-key') as HTMLInputElement).value = config.dashscope.apiKey || ''
+              setDashscopeApiUrl(config.dashscope.apiUrl || '')
+              setDashscopeApiKey(config.dashscope.apiKey || '')
             }
 
-            // 导入公众号配置
-            if (config.wechatMp) {
-              ; (document.getElementById('mp-api-url') as HTMLInputElement).value = config.wechatMp.apiUrl || ''
-                ; (document.getElementById('mp-appid') as HTMLInputElement).value = config.wechatMp.appId || ''
-                ; (document.getElementById('mp-secret') as HTMLInputElement).value = config.wechatMp.appSecret || ''
+            if (config.xhs) {
+              setXhsApiUrl(config.xhs.apiUrl || '')
+              setXhsApiKey(config.xhs.apiKey || '')
             }
 
-            // 导入提示词配置
+            // 兼容旧版 wechatMp 配置
+            if (config.wechatMp && !config.accounts) {
+              const legacyMp = config.wechatMp
+              if (legacyMp.appId || legacyMp.appSecret) {
+                setWechatAccounts([{
+                  id: Date.now().toString(),
+                  name: '默认公众号',
+                  appId: legacyMp.appId || '',
+                  appSecret: legacyMp.appSecret || '',
+                  webhookUrl: '',
+                  enabled: true
+                }])
+                setActiveAccountId(Date.now().toString())
+              }
+            }
+
             if (config.prompts) {
-              ; (document.getElementById('article-prompt') as HTMLTextAreaElement).value = config.prompts.article || ''
-                ; (document.getElementById('formatting-prompt') as HTMLTextAreaElement).value = config.prompts.formatting || ''
+              setArticlePrompt(config.prompts.article || '')
+              setCoverPrompt(config.prompts.cover || '')
+              setIllustrationPrompt(config.prompts.illustration || '')
+              setFormattingPrompt(config.prompts.formatting || '')
             }
 
-            // 导入默认设置
             if (config.defaults) {
-              ; (document.getElementById('default-word-count') as HTMLInputElement).value = config.defaults.wordCount || ''
-                ; (document.getElementById('default-style') as HTMLInputElement).value = config.defaults.style || ''
-                ; (document.getElementById('default-images') as HTMLInputElement).value = config.defaults.images || ''
-                ; (document.getElementById('analysis-count') as HTMLInputElement).value = config.defaults.analysisCount || ''
-                ; (document.getElementById('insights-count') as HTMLInputElement).value = config.defaults.insightsCount || ''
+              setAnalysisCount(config.defaults.analysisCount || '20')
+              setInsightsCount(config.defaults.insightsCount || '5')
             }
 
-            alert('配置导入成功！')
+            if (config.accounts) {
+              setWechatAccounts(config.accounts)
+              if (config.accounts.length > 0) setActiveAccountId(config.accounts[0].id)
+            }
+
+            alert('配置导入成功！请记得保存。')
           } catch (error) {
             alert('配置文件格式错误，导入失败')
           }
@@ -716,7 +783,8 @@ export default function SettingsPage() {
                 <Input
                   id="ai-api-url"
                   placeholder="https://openrouter.ai/api/v1/chat/completions"
-                  defaultValue="https://openrouter.ai/api/v1/chat/completions"
+                  value={aiApiUrl}
+                  onChange={(e) => setAiApiUrl(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   支持OpenRouter、OpenAI等兼容接口
@@ -729,7 +797,8 @@ export default function SettingsPage() {
                   id="ai-api-key"
                   type="password"
                   placeholder="sk-or-v1-..."
-                  defaultValue="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"
+                  value={aiApiKey}
+                  onChange={(e) => setAiApiKey(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   从 <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">OpenRouter</a> 获取
@@ -830,7 +899,8 @@ export default function SettingsPage() {
                 <Input
                   id="wechat-api-url"
                   placeholder="https://www.dajiala.com/fbmain/monitor/v3/kw_search"
-                  defaultValue="https://www.dajiala.com/fbmain/monitor/v3/kw_search"
+                  value={wechatArticleApiUrl}
+                  onChange={(e) => setWechatArticleApiUrl(e.target.value)}
                 />
               </div>
 
@@ -840,7 +910,8 @@ export default function SettingsPage() {
                   id="wechat-api-key"
                   type="password"
                   placeholder="JZL..."
-                  defaultValue="JZLc29ca3bfdebd2bf3"
+                  value={wechatArticleApiKey}
+                  onChange={(e) => setWechatArticleApiKey(e.target.value)}
                 />
               </div>
 
@@ -871,7 +942,8 @@ export default function SettingsPage() {
                 <Input
                   id="siliconflow-api-url"
                   placeholder="https://api.siliconflow.cn/v1/images/generations"
-                  defaultValue="https://api.siliconflow.cn/v1/images/generations"
+                  value={siliconflowApiUrl}
+                  onChange={(e) => setSiliconflowApiUrl(e.target.value)}
                 />
               </div>
 
@@ -881,7 +953,8 @@ export default function SettingsPage() {
                   id="siliconflow-api-key"
                   type="password"
                   placeholder="sk-..."
-                  defaultValue="sk-tsfffvfoywxhvqmfwwuamopclmwhdqrcldogntbimstltvly"
+                  value={siliconflowApiKey}
+                  onChange={(e) => setSiliconflowApiKey(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   从 <a href="https://cloud.siliconflow.cn" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">硅基流动</a> 获取
@@ -893,7 +966,8 @@ export default function SettingsPage() {
                 <Input
                   id="siliconflow-model"
                   placeholder="Kwai-Kolors/Kolors"
-                  defaultValue="Kwai-Kolors/Kolors"
+                  value={siliconflowModel}
+                  onChange={(e) => setSiliconflowModel(e.target.value)}
                 />
               </div>
 
@@ -924,7 +998,8 @@ export default function SettingsPage() {
                 <Input
                   id="dashscope-api-url"
                   placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
-                  defaultValue="https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+                  value={dashscopeApiUrl}
+                  onChange={(e) => setDashscopeApiUrl(e.target.value)}
                 />
               </div>
 
@@ -934,7 +1009,8 @@ export default function SettingsPage() {
                   id="dashscope-api-key"
                   type="password"
                   placeholder="sk-..."
-                  defaultValue="sk-4e36b402fb234fbcbead0d355bb59561"
+                  value={dashscopeApiKey}
+                  onChange={(e) => setDashscopeApiKey(e.target.value)}
                 />
                 <p className="text-sm text-muted-foreground">
                   从 <a href="https://dashscope.console.aliyun.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">阿里云DashScope控制台</a> 获取
@@ -1023,21 +1099,14 @@ export default function SettingsPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label>Webhook地址</Label>
-                        <Input
-                          value={activeAccount.webhookUrl}
-                          onChange={(e) => updateAccount(activeAccount.id, 'webhookUrl', e.target.value)}
-                          placeholder="https://your-n8n-server.com/webhook/..."
-                        />
-                        <p className="text-sm text-muted-foreground">
-                          n8n服务器webhook地址
-                        </p>
+                        {/* Webhook地址已移除，使用直连模式 */}
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>公众号AppID</Label>
                           <Input
+                            id="mp-appid"
                             value={activeAccount.appId}
                             onChange={(e) => updateAccount(activeAccount.id, 'appId', e.target.value)}
                             placeholder="wx..."
@@ -1046,6 +1115,7 @@ export default function SettingsPage() {
                         <div className="space-y-2">
                           <Label>公众号AppSecret</Label>
                           <Input
+                            id="mp-secret"
                             type="password"
                             value={activeAccount.appSecret}
                             onChange={(e) => updateAccount(activeAccount.id, 'appSecret', e.target.value)}
@@ -1134,7 +1204,7 @@ export default function SettingsPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium">连接测试</p>
                   <p className="text-sm text-muted-foreground">
-                    验证webhook是否可访问
+                    验证 Webhook 连通性 或 AppID/Secret 有效性
                   </p>
                 </div>
                 {renderTestButton(wechatMpTestStatus, testWechatMpConnection)}
@@ -1142,10 +1212,48 @@ export default function SettingsPage() {
 
               <Separator />
 
-              <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-md">
-                <p className="text-sm text-blue-900 dark:text-blue-100">
-                  💡 提示：小红书不需要API配置，生成文章后直接扫码发布即可
-                </p>
+            </CardContent>
+          </Card>
+
+          {/* 小红书发布配置 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                📕 小红书发布配置
+              </CardTitle>
+              <CardDescription>
+                配置小红书发布API密钥，实现一键发布功能
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="xiaohongshu-api-url">API地址</Label>
+                <Input
+                  id="xiaohongshu-api-url"
+                  placeholder="https://note.limyai.com/api/openapi/publish_note"
+                  defaultValue="https://note.limyai.com/api/openapi/publish_note"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="xiaohongshu-api-key">API Key</Label>
+                <Input
+                  id="xiaohongshu-api-key"
+                  type="password"
+                  placeholder="xhs_..."
+                  value={xhsApiKey}
+                  onChange={(e) => setXhsApiKey(e.target.value)}
+                />
+                <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 mt-2">
+                  <p className="text-sm text-red-900 dark:text-red-100">
+                    📌 获取API密钥步骤：
+                  </p>
+                  <ol className="list-decimal list-inside text-sm text-red-700 dark:text-red-300 mt-1 space-y-1">
+                    <li>访问 <a href="https://note.limyai.com/dashboard/open/publish_note" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">note.limyai.com</a></li>
+                    <li>使用激活码 <code className="bg-red-100 dark:bg-red-900 px-1 py-0.5 rounded font-mono">H64Q4VRD</code> 注册</li>
+                    <li>复制API密钥填写到此处</li>
+                  </ol>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1172,7 +1280,18 @@ export default function SettingsPage() {
                       <button
                         key={key}
                         type="button"
-                        onClick={() => setSelectedPlatform(key)}
+                        onClick={() => {
+                          setSelectedPlatform(key)
+                          // 切换平台时自动更新提示词
+                          if (key === 'wechat') {
+                            setArticlePrompt(WRITING_TONE_PRESETS[selectedWritingTone].prompt)
+                          } else {
+                            const preset = PLATFORM_ARTICLE_PRESETS[key]
+                            if ('prompt' in preset) {
+                              setArticlePrompt((preset as any).prompt)
+                            }
+                          }
+                        }}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${isSelected
                           ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
                           : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
@@ -1203,7 +1322,11 @@ export default function SettingsPage() {
                           <button
                             key={key}
                             type="button"
-                            onClick={() => setSelectedWritingTone(key)}
+                            onClick={() => {
+                              setSelectedWritingTone(key)
+                              // 切换文风时自动更新提示词
+                              setArticlePrompt(WRITING_TONE_PRESETS[key].prompt)
+                            }}
                             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
                               ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
                               : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
@@ -1230,8 +1353,8 @@ export default function SettingsPage() {
                       id="article-prompt"
                       rows={15}
                       placeholder="输入文章生成提示词..."
-                      value={WRITING_TONE_PRESETS[selectedWritingTone].prompt}
-                      onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
+                      value={articlePrompt}
+                      onChange={(e) => setArticlePrompt(e.target.value)}
                     />
                     <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
                       <span className="text-blue-500">💡</span>
@@ -1256,8 +1379,8 @@ export default function SettingsPage() {
                     id="platform-prompt"
                     rows={18}
                     placeholder={`输入${PLATFORM_ARTICLE_PRESETS[selectedPlatform].name}内容生成提示词...`}
-                    value={'prompt' in PLATFORM_ARTICLE_PRESETS[selectedPlatform] ? (PLATFORM_ARTICLE_PRESETS[selectedPlatform] as { prompt: string }).prompt : ''}
-                    onChange={() => {/* 用户可以编辑 */ }}
+                    value={articlePrompt}
+                    onChange={(e) => setArticlePrompt(e.target.value)}
                   />
                   <div className={`flex items-start gap-2 p-3 rounded-lg ${selectedPlatform === 'xiaohongshu' ? 'bg-red-50 dark:bg-red-950' : 'bg-sky-50 dark:bg-sky-950'}`}>
                     <span className={selectedPlatform === 'xiaohongshu' ? 'text-red-500' : 'text-sky-500'}>💡</span>
@@ -1306,7 +1429,11 @@ export default function SettingsPage() {
                       <button
                         key={key}
                         type="button"
-                        onClick={() => setSelectedFormattingStyle(key)}
+                        onClick={() => {
+                          setSelectedFormattingStyle(key)
+                          // 切换排版风格时自动更新提示词
+                          setFormattingPrompt(FORMATTING_STYLE_PRESETS[key].prompt)
+                        }}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${styleClasses[key]}`}
                       >
                         {preset.emoji} {preset.name}
@@ -1336,8 +1463,8 @@ export default function SettingsPage() {
                   id="formatting-prompt"
                   rows={18}
                   placeholder="输入排版提示词..."
-                  value={FORMATTING_STYLE_PRESETS[selectedFormattingStyle].prompt}
-                  onChange={() => {/* 用户可以编辑，但切换风格会重置 */ }}
+                  value={formattingPrompt}
+                  onChange={(e) => setFormattingPrompt(e.target.value)}
                 />
                 <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 rounded-lg">
                   <span className="text-amber-500">💡</span>
@@ -1371,7 +1498,11 @@ export default function SettingsPage() {
                       <button
                         key={key}
                         type="button"
-                        onClick={() => setSelectedVideoScriptType(key)}
+                        onClick={() => {
+                          setSelectedVideoScriptType(key)
+                          // 切换视频类型时自动更新提示词
+                          setVideoScriptPrompt(VIDEO_SCRIPT_TYPE_PRESETS[key].prompt)
+                        }}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${isSelected
                           ? 'bg-primary text-primary-foreground border-2 border-primary shadow-sm'
                           : 'bg-muted text-muted-foreground border border-input hover:bg-accent hover:text-accent-foreground'
@@ -1400,8 +1531,8 @@ export default function SettingsPage() {
                   id="video-script-prompt"
                   rows={18}
                   placeholder="输入视频脚本生成提示词..."
-                  value={VIDEO_SCRIPT_TYPE_PRESETS[selectedVideoScriptType].prompt}
-                  onChange={() => {/* 用户可以编辑，但切换类型会重置 */ }}
+                  value={videoScriptPrompt}
+                  onChange={(e) => setVideoScriptPrompt(e.target.value)}
                 />
                 <div className="flex items-start gap-2 p-3 bg-violet-50 dark:bg-violet-950 rounded-lg">
                   <span className="text-violet-500">💡</span>
@@ -1430,20 +1561,8 @@ export default function SettingsPage() {
                   id="cover-image-prompt"
                   rows={12}
                   placeholder="输入封面图生成提示词..."
-                  defaultValue={`封面要求（务必遵循）：
-1) 核心主题：封面必须围绕"{title}"，体现与文章主题直接相关的场景/物件/动作，不能是泛化风景。
-2) 具体元素：优先加入与主题直连的事物（产品/工具/人物行为/职场或业务场景），避免无关建筑与自然风光。
-3) 风格：保持水彩或插画风格，画面简洁专业。
-4) 禁止：纯风景、度假/旅游/山水/公园/海边/城市天际线等无关画面；禁止幼稚卡通。
-5) 色调：现代、清爽、积极，突出主题。
-
-图像风格指南：
-- 采用现代的、写实或半写实的企业/商业/咨询公司专业摄影风格
-- 禁止字面化表达，必须使用隐喻
-- 氛围必须是专业、理性、积极向上、沉稳的
-- 构图必须简洁、大气
-- 绝对禁止生成任何诡异、阴暗、恐怖、幼稚、卡通的元素
-- 不要出现人物图像`}
+                  value={coverPrompt}
+                  onChange={(e) => setCoverPrompt(e.target.value)}
                 />
                 <div className="flex items-start gap-2 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
                   <span className="text-purple-500">💡</span>
@@ -1472,22 +1591,8 @@ export default function SettingsPage() {
                   id="article-image-prompt"
                   rows={12}
                   placeholder="输入配图生成提示词..."
-                  defaultValue={`你是一位专业的视觉设计师。请根据以下文章内容，生成配图的中文提示词。
-
-要求：
-1. 每张配图的提示词应该对应文章的不同部分或关键内容
-2. 提示词要具体、生动，能够准确描述画面内容
-3. 提示词应该使用中文，便于AI图像生成
-4. 提示词长度控制在50字以内
-5. 图片风格应该符合文章主题（专业、清新、科技感等）
-6. 避免过于抽象的概念，要描述具体的视觉元素
-
-风格指南：
-- 保持与文章主题高度相关
-- 画面简洁大气，避免杂乱
-- 色彩和谐，符合专业调性
-- 可以使用适当的视觉隐喻
-- 避免过于幼稚或卡通的风格`}
+                  value={illustrationPrompt}
+                  onChange={(e) => setIllustrationPrompt(e.target.value)}
                 />
                 <div className="flex items-start gap-2 p-3 bg-green-50 dark:bg-green-950 rounded-lg">
                   <span className="text-green-500">💡</span>

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -54,6 +55,17 @@ import { useRouter } from "next/navigation"
 import { QRCodeDialog } from "@/components/qr-code-dialog"
 import { ArticlePreviewDialog } from "@/components/article-preview-dialog"
 import { getEnabledWechatAccounts, type WechatAccount } from "@/lib/wechat-accounts"
+import { getImageApiConfig, getPromptSettings } from "@/lib/api-config"
+
+// 平台类型
+type PlatformFilter = "all" | "wechat" | "xiaohongshu" | "twitter"
+
+// 平台配置
+const PLATFORM_CONFIG: Record<Exclude<PlatformFilter, "all">, { name: string; icon: string }> = {
+  wechat: { name: "公众号", icon: "📱" },
+  xiaohongshu: { name: "小红书", icon: "📕" },
+  twitter: { name: "推特", icon: "🐦" },
+}
 
 type ArticleStatus = "draft" | "pending_review" | "published"
 
@@ -61,6 +73,7 @@ interface Article {
   id: number
   title: string
   content: string
+  platform: string
   status: ArticleStatus
   summary: string | null
   createdAt: string
@@ -81,6 +94,7 @@ export default function PublishManagementPage() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<ArticleStatus | "all">("all")
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all")
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [publishingId, setPublishingId] = useState<number | null>(null)
@@ -162,7 +176,9 @@ export default function PublishManagementPage() {
             appId: account.appId,
             appSecret: account.appSecret,
             webhookUrl: account.webhookUrl,
-          }
+          },
+          imageApiConfig: getImageApiConfig(),
+          coverPrompt: getPromptSettings().coverPrompt,
         }),
       })
 
@@ -392,7 +408,8 @@ export default function PublishManagementPage() {
   const filteredArticles = articles.filter((article) => {
     const matchesSearch = article.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter === "all" || article.status === statusFilter
-    return matchesSearch && matchesStatus
+    const matchesPlatform = platformFilter === "all" || article.platform === platformFilter
+    return matchesSearch && matchesStatus && matchesPlatform
   })
 
   return (
@@ -400,9 +417,25 @@ export default function PublishManagementPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">文章库</h1>
         <p className="text-muted-foreground mt-2">
-          管理所有文章，支持发布到微信公众号和小红书
+          管理所有内容，按平台分类查看
         </p>
       </div>
+
+      {/* 平台筛选标签 */}
+      <Tabs value={platformFilter} onValueChange={(v) => setPlatformFilter(v as PlatformFilter)}>
+        <TabsList>
+          <TabsTrigger value="all">全部</TabsTrigger>
+          <TabsTrigger value="wechat" className="flex items-center gap-1">
+            <span>📱</span> 公众号
+          </TabsTrigger>
+          <TabsTrigger value="xiaohongshu" className="flex items-center gap-1">
+            <span>📕</span> 小红书
+          </TabsTrigger>
+          <TabsTrigger value="twitter" className="flex items-center gap-1">
+            <span>🐦</span> 推特
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* 操作栏 */}
       <Card>

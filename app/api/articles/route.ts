@@ -57,7 +57,16 @@ export async function POST(request: NextRequest) {
             images,
             reportId,
             status = 'draft',
+            platform = 'wechat',
         } = body
+
+        console.log('\n📝 创建文章请求:')
+        console.log(`- 标题: ${title?.substring(0, 50)}...`)
+        console.log(`- 内容长度: ${content?.length || 0} 字符`)
+        console.log(`- 平台: ${platform}`)
+        console.log(`- 状态: ${status}`)
+        console.log(`- 报告ID: ${reportId}`)
+        console.log(`- 图片数量: ${Array.isArray(images) ? images.length : 0}`)
 
         if (!title || !content) {
             return NextResponse.json(
@@ -66,16 +75,21 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        const createData = {
+            title: String(title),
+            content: String(content),
+            summary: summary ? String(summary) : null,
+            images: images ? JSON.stringify(images) : null,
+            reportId: reportId ? parseInt(String(reportId)) : null,
+            status: String(status),
+            platform: String(platform),
+            source: 'ai_generated',
+        }
+
+        console.log('- 准备写入数据库:', JSON.stringify(createData).substring(0, 200) + '...')
+
         const article = await prisma.article.create({
-            data: {
-                title,
-                content,
-                summary: summary || null,
-                images: images ? JSON.stringify(images) : null,
-                reportId: reportId ? parseInt(reportId) : null,
-                status,
-                source: 'ai_generated',
-            },
+            data: createData,
         })
 
         return NextResponse.json({

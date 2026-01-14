@@ -14,7 +14,7 @@ export default function Home() {
       </div>
 
       {/* 快速操作 */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
         <Card className="hover:shadow-lg transition-shadow cursor-pointer">
           <Link href="/topic-analysis">
             <CardHeader>
@@ -40,28 +40,11 @@ export default function Home() {
                 <FileEdit className="h-5 w-5 text-muted-foreground" />
               </div>
               <CardDescription>
-                AI智能创作或手动编辑，一键发布到公众号
+                AI智能创作、视频脚本生成，一键发布到公众号
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Button className="w-full">开始创作</Button>
-            </CardContent>
-          </Link>
-        </Card>
-
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-          <Link href="/video-script">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">视频脚本</CardTitle>
-                <Video className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <CardDescription>
-                AI生成短视频脚本，自动分镜建议
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full">生成脚本</Button>
             </CardContent>
           </Link>
         </Card>
