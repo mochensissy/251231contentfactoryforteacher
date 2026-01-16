@@ -42,3 +42,4 @@ prisma/*.db-journal
 # backups
 *副本/
 **/251109内容工厂Agent*副本/
+content-factory-agent/
