@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
                 test: true,
                 timestamp: new Date().toISOString(),
-                message: 'This is a test request from Content Factory Agent'
+                message: 'This is a test request from WenSiXiu Intelligence Platform'
             }),
         })
 

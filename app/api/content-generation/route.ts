@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
                 'HTTP-Referer': 'https://content-factory-agent.local',
-                'X-Title': 'Content Factory Agent',
+                'X-Title': 'WenSiXiu Intelligence',
             },
             body: JSON.stringify({
                 model,

@@ -32,10 +32,10 @@ export function MainNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200",
               isActive
-                ? "bg-primary/10 text-primary ring-1 ring-primary/30 shadow-sm"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-primary"
+                ? "bg-secondary text-primary shadow-sm"
+                : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
             )}
             aria-current={isActive ? "page" : undefined}
           >
