@@ -164,13 +164,13 @@ export default function SettingsPage() {
   useEffect(() => {
     // 公众号文章 API 配置
     const wechatArticleConfig = getWechatArticleApiConfig()
-    setWechatArticleApiUrl(wechatArticleConfig.apiUrl || 'https://www.dajiala.com/fbmain/monitor/v3/kw_search')
-    setWechatArticleApiKey(wechatArticleConfig.apiKey || 'JZLc29ca3bfdebd2bf3')
+    setWechatArticleApiUrl(wechatArticleConfig.apiUrl || '')
+    setWechatArticleApiKey(wechatArticleConfig.apiKey || '')
 
     // AI API 配置
     const aiConfig = getAiApiConfig()
-    setAiApiUrl(aiConfig.apiUrl || 'https://openrouter.ai/api/v1/chat/completions')
-    setAiApiKey(aiConfig.apiKey || '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')
+    setAiApiUrl(aiConfig.apiUrl || '')
+    setAiApiKey(aiConfig.apiKey || '')
     if (aiConfig.model) {
       const presetModel = getModelById(aiConfig.model)
       if (presetModel) {
@@ -240,18 +240,18 @@ export default function SettingsPage() {
     // 图片API配置
     const imageConfig = getImageApiConfig()
     if (imageConfig.siliconflow) {
-      setSiliconflowApiUrl(imageConfig.siliconflow.apiUrl || 'https://api.siliconflow.cn/v1/images/generations')
-      setSiliconflowApiKey(imageConfig.siliconflow.apiKey || 'sk-tsfffvfoywxhvqmfwwuamopclmwhdqrcldogntbimstltvly')
+      setSiliconflowApiUrl(imageConfig.siliconflow.apiUrl || '')
+      setSiliconflowApiKey(imageConfig.siliconflow.apiKey || '')
       setSiliconflowModel(imageConfig.siliconflow.model || 'Kwai-Kolors/Kolors')
     }
     if (imageConfig.dashscope) {
-      setDashscopeApiUrl(imageConfig.dashscope.apiUrl || 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis')
-      setDashscopeApiKey(imageConfig.dashscope.apiKey || 'sk-4e36b402fb234fbcbead0d355bb59561')
+      setDashscopeApiUrl(imageConfig.dashscope.apiUrl || '')
+      setDashscopeApiKey(imageConfig.dashscope.apiKey || '')
     }
 
     // 小红书API配置
     const xhsConfig = getXiaohongshuApiConfig()
-    setXhsApiUrl(xhsConfig.apiUrl || 'https://note.limyai.com/api/openapi/publish_note')
+    setXhsApiUrl(xhsConfig.apiUrl || '')
     setXhsApiKey(xhsConfig.apiKey || '')
   }, [])
 
