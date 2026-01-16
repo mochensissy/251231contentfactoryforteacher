@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 const notoSerifSC = Noto_Serif_SC({
-  weight: ["400", "500", "600", "700", "900"],
+  weight: ["400", "600", "700"],
   subsets: ["latin"],
   variable: "--font-noto-serif",
 });
