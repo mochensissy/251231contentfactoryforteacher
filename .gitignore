@@ -32,3 +32,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# database
+prisma/*.db
+prisma/*.db-journal
+*.db
+*.db-journal
+
+# backups
+*副本/
+**/251109内容工厂Agent*副本/

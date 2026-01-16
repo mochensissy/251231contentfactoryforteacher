@@ -144,8 +144,11 @@ export default function ContentCreationPage() {
   // 自定义输入
   const [customTopic, setCustomTopic] = useState("")
   const [customDesc, setCustomDesc] = useState("")
-  const [customMode, setCustomMode] = useState<"ai" | "manual">("ai")
   const [manualContent, setManualContent] = useState("")
+
+  // 编辑模式状态
+  const [editingArticleId, setEditingArticleId] = useState<number | null>(null)
+  const [loadingArticle, setLoadingArticle] = useState(false)
 
   // 公众号配置
   const [wechatAccounts, setWechatAccountsState] = useState<WechatAccount[]>([])
@@ -225,6 +228,21 @@ export default function ContentCreationPage() {
       setActivePlatform(platformParam as Platform)
     }
 
+    // 检查 articleId 参数（编辑模式）
+    const articleIdParam = searchParams.get("articleId")
+    const modeParam = searchParams.get("mode")
+
+    if (articleIdParam) {
+      const id = parseInt(articleIdParam)
+      if (!isNaN(id)) {
+        loadArticleForEdit(id)
+        // 如果 mode=manual，设置为自定义输入模式
+        if (modeParam === "manual") {
+          setSource("custom")
+        }
+      }
+    }
+
     // 检查创作缓存
     try {
       const cached = sessionStorage.getItem("content-creation-source")
@@ -242,6 +260,15 @@ export default function ContentCreationPage() {
       console.error("读取创作缓存失败:", err)
     }
   }, [searchParams])
+
+  // 自动填充手动创作内容
+  useEffect(() => {
+    if (source === "custom" && customTopic && manualContent) {
+      setGeneratedTitle(customTopic)
+      setGeneratedContent(manualContent)
+      setGeneratedSummary(customTopic)
+    }
+  }, [source, customTopic, manualContent])
 
   // 加载洞察
   useEffect(() => {
@@ -291,6 +318,48 @@ export default function ContentCreationPage() {
       if (data.success) setArticles(data.data)
     } catch (error) {
       console.error("加载文章列表失败:", error)
+    }
+  }
+
+  const loadArticleForEdit = async (articleId: number) => {
+    setLoadingArticle(true)
+    try {
+      const response = await fetch(`/api/articles/${articleId}`)
+      const data = await response.json()
+
+      if (data.success && data.data) {
+        const article = data.data
+        setEditingArticleId(article.id)
+        setGeneratedTitle(article.title)
+        setGeneratedContent(article.content)
+        setGeneratedSummary(article.summary || '')
+
+        // 解析并设置图片（如果有）
+        if (article.images) {
+          try {
+            const images = typeof article.images === 'string'
+              ? JSON.parse(article.images)
+              : article.images
+            if (Array.isArray(images)) {
+              setGeneratedImages(images)
+            }
+          } catch (e) {
+            console.warn('解析文章图片失败:', e)
+          }
+        }
+
+        // 设置平台（如果有）
+        if (article.platform && ['wechat', 'xiaohongshu', 'twitter', 'video'].includes(article.platform)) {
+          setActivePlatform(article.platform as Platform)
+        }
+      } else {
+        alert('文章加载失败：' + (data.error || '文章不存在'))
+      }
+    } catch (error) {
+      console.error('加载文章失败:', error)
+      alert('加载文章失败，请重试')
+    } finally {
+      setLoadingArticle(false)
     }
   }
 
@@ -449,8 +518,13 @@ export default function ContentCreationPage() {
         contentToSave = twitterContent
       }
 
-      const response = await fetch('/api/articles', {
-        method: 'POST',
+      // 检查是否是编辑模式
+      const isEditing = editingArticleId !== null
+      const url = isEditing ? `/api/articles/${editingArticleId}` : '/api/articles'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: generatedTitle,
@@ -466,7 +540,7 @@ export default function ContentCreationPage() {
         throw new Error(errorData.error || '保存失败')
       }
 
-      alert('文章已保存！')
+      alert(isEditing ? '文章已更新！' : '文章已保存！')
       router.push('/publish-management')
     } catch (error) {
       alert(error instanceof Error ? error.message : '保存失败')
@@ -949,6 +1023,9 @@ export default function ContentCreationPage() {
                       setGeneratedTitle(article.title)
                       setGeneratedContent(article.content)
                       setGeneratedSummary(article.summary || "")
+                      // 清空已转换的平台内容，以便重新转换
+                      setXiaohongshuContent('')
+                      setTwitterContent('')
                     }
                   }
                 }}
@@ -988,69 +1065,24 @@ export default function ContentCreationPage() {
           </TabsContent>
 
           <TabsContent value="custom" className="space-y-4 mt-4">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
-                <Button
-                  variant={customMode === "ai" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setCustomMode("ai")}
-                  className="text-xs"
-                >
-                  <Sparkles className="mr-1 h-3 w-3" /> AI自动生成
-                </Button>
-                <Button
-                  variant={customMode === "manual" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setCustomMode("manual")}
-                  className="text-xs"
-                >
-                  <PenLine className="mr-1 h-3 w-3" /> 手动创作
-                </Button>
-              </div>
+            <div className="space-y-2">
+              <Label>文章标题</Label>
+              <Input
+                placeholder="输入文章标题"
+                value={customTopic}
+                onChange={(e) => setCustomTopic(e.target.value)}
+              />
             </div>
-
-            {customMode === "ai" ? (
-              <>
-                <div className="space-y-2">
-                  <Label>选题标题</Label>
-                  <Input
-                    placeholder="例如：如何用AI提升工作效率"
-                    value={customTopic}
-                    onChange={(e) => setCustomTopic(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>补充说明（可选）</Label>
-                  <Textarea
-                    placeholder="描述你希望文章包含的要点、风格等..."
-                    value={customDesc}
-                    onChange={(e) => setCustomDesc(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label>文章标题</Label>
-                  <Input
-                    placeholder="输入文章标题"
-                    value={customTopic}
-                    onChange={(e) => setCustomTopic(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>文章内容</Label>
-                  <Textarea
-                    placeholder="在这里直接输入或粘贴文章内容..."
-                    value={manualContent}
-                    onChange={(e) => setManualContent(e.target.value)}
-                    rows={10}
-                    className="font-mono text-sm"
-                  />
-                </div>
-              </>
-            )}
+            <div className="space-y-2">
+              <Label>文章内容</Label>
+              <Textarea
+                placeholder="在这里直接输入或粘贴已写好的文章内容..."
+                value={manualContent}
+                onChange={(e) => setManualContent(e.target.value)}
+                rows={10}
+                className="font-mono text-sm"
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -1082,76 +1114,64 @@ export default function ContentCreationPage() {
         <TabsContent value="wechat" className="space-y-4 mt-4">
           {renderSourceSelector()}
 
-          {/* 创作参数 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>创作参数</CardTitle>
-              <CardDescription>设置公众号文章的风格和长度</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>文章长度</Label>
-                  <Select value={wordCount} onValueChange={setWordCount}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-background">
-                      <SelectItem value="500-800">500-800字（短文）</SelectItem>
-                      <SelectItem value="1000-1500">1000-1500字（中等）</SelectItem>
-                      <SelectItem value="2000-3000">2000-3000字（长文）</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>写作风格</Label>
-                  <Select value={style} onValueChange={setStyle}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-background">
-                      <SelectItem value="professional">专业严谨</SelectItem>
-                      <SelectItem value="casual">轻松活泼</SelectItem>
-                      <SelectItem value="storytelling">故事叙述</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>配图数量</Label>
-                  <Select value={imageCount} onValueChange={setImageCount}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-background">
-                      <SelectItem value="0">不需要配图</SelectItem>
-                      <SelectItem value="3">3张</SelectItem>
-                      <SelectItem value="5">5张</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <div className="flex justify-center">
-            {source === "custom" && customMode === "manual" ? (
-              <Button
-                size="lg"
-                onClick={() => {
-                  if (!customTopic || !manualContent) {
-                    alert("请填写标题和内容")
-                    return
-                  }
-                  setGeneratedTitle(customTopic)
-                  setGeneratedContent(manualContent)
-                  setGeneratedSummary(customTopic) // 简单使用标题作为摘要默认值
-                }}
-                disabled={!customTopic || !manualContent}
-              >
-                <FileEdit className="mr-2 h-5 w-5" />
-                开始编辑/预览
-              </Button>
-            ) : (
+          {/* 创作参数 - 仅在非自定义输入时显示 */}
+          {source !== "custom" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>创作参数</CardTitle>
+                <CardDescription>设置公众号文章的风格和长度</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label>文章长度</Label>
+                    <Select value={wordCount} onValueChange={setWordCount}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-background">
+                        <SelectItem value="500-800">500-800字(短文)</SelectItem>
+                        <SelectItem value="1000-1500">1000-1500字(中等)</SelectItem>
+                        <SelectItem value="2000-3000">2000-3000字(长文)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>写作风格</Label>
+                    <Select value={style} onValueChange={setStyle}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-background">
+                        <SelectItem value="professional">专业严谨</SelectItem>
+                        <SelectItem value="casual">轻松活泼</SelectItem>
+                        <SelectItem value="storytelling">故事叙述</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>配图数量</Label>
+                    <Select value={imageCount} onValueChange={setImageCount}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-background">
+                        <SelectItem value="0">不需要配图</SelectItem>
+                        <SelectItem value="3">3张</SelectItem>
+                        <SelectItem value="5">5张</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+
+          {/* 创作按钮 - 仅在非自定义输入时显示 */}
+          {source !== "custom" && (
+            <div className="flex justify-center">
               <Button size="lg" onClick={handleCreate} disabled={isCreating || (source === "insight" ? !selectedInsight : !customTopic)}>
                 <Wand2 className="mr-2 h-5 w-5" />
                 {isCreating ? "创作中..." : "开始创作"}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 进度显示 */}
           {isCreating && (
@@ -1173,11 +1193,18 @@ export default function ContentCreationPage() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
-                    编辑与发布 <Badge variant="secondary">AI生成</Badge>
+                    编辑与发布
+                    {source === "custom" ? (
+                      <Badge variant="outline">手动创作</Badge>
+                    ) : (
+                      <Badge variant="secondary">AI生成</Badge>
+                    )}
                   </CardTitle>
-                  <Button variant="outline" onClick={handleCreate} disabled={isWorking}>
-                    <RefreshCw className="mr-2 h-4 w-4" /> 重新生成
-                  </Button>
+                  {source !== "custom" && (
+                    <Button variant="outline" onClick={handleCreate} disabled={isWorking}>
+                      <RefreshCw className="mr-2 h-4 w-4" /> 重新生成
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

@@ -47,7 +47,8 @@ import {
   Copy,
   Trash2,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Save
 } from "lucide-react"
 import { format } from "date-fns"
 import { zhCN } from "date-fns/locale"
@@ -106,6 +107,22 @@ export default function PublishManagementPage() {
   const [twitterLoading, setTwitterLoading] = useState(false)
   const [twitterArticle, setTwitterArticle] = useState<Article | null>(null)
   const [twitterError, setTwitterError] = useState<string | null>(null)
+
+  // 小红书文案改写
+  const [xhsDialogOpen, setXhsDialogOpen] = useState(false)
+  const [xhsContent, setXhsContent] = useState("")
+  const [xhsLoading, setXhsLoading] = useState(false)
+  const [xhsArticle, setXhsArticle] = useState<Article | null>(null)
+  const [xhsError, setXhsError] = useState<string | null>(null)
+  const [xhsSaving, setXhsSaving] = useState(false)
+
+  // 短视频脚本改写
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false)
+  const [videoContent, setVideoContent] = useState("")
+  const [videoLoading, setVideoLoading] = useState(false)
+  const [videoArticle, setVideoArticle] = useState<Article | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
+  const [videoSaving, setVideoSaving] = useState(false)
 
   // 二维码弹窗状态
   const [qrDialogOpen, setQrDialogOpen] = useState(false)
@@ -200,50 +217,42 @@ export default function PublishManagementPage() {
     }
   }
 
-  // 发布到小红书
-  const handlePublishToXiaohongshu = async (articleId: number) => {
-    if (publishingId) {
-      alert('有文章正在发布中，请稍候...')
-      return
-    }
-
-    const confirmed = confirm('确定要发布到小红书吗？\n\n流程：图文分离 → 小红书风格改写 → 图片置顶 → 调用发布API\n预计需要10-20秒')
-    if (!confirmed) return
-
-    setPublishingId(articleId)
-    setPublishingPlatform('xiaohongshu')
-
+  // 复制小红书内容（替代API发布）
+  const handleCopyXiaohongshuContent = async (articleId: number) => {
     try {
-      const response = await fetch('/api/publish/xiaohongshu', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ articleId }),
-      })
-
+      const response = await fetch(`/api/articles/${articleId}`)
       const data = await response.json()
 
-      if (response.ok && data.success) {
-        // 显示二维码弹窗
-        setQrDialogData({
-          url: data.data.publishUrl,
-          qrImageUrl: data.data.qrCodeUrl,
-          title: '小红书发布成功',
-        })
-        setQrDialogOpen(true)
-
-        // 刷新列表
-        loadArticles()
-      } else {
-        alert('❌ 发布失败：' + (data.error || '未知错误'))
+      if (!data.success || !data.data) {
+        alert('❌ 加载文章失败')
+        return
       }
+
+      const article = data.data
+      // 转换为小红书格式的纯文本
+      let content = article.content
+        // 移除 Markdown 标题标记
+        .replace(/^#{1,6}\s+/gm, '')
+        // 移除图片标记
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        // 移除链接，保留文字
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        // 移除加粗
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        // 移除斜体
+        .replace(/\*(.*?)\*/g, '$1')
+        // 清理多余空行
+        .replace(/\n\n+/g, '\n\n')
+        .trim()
+
+      // 添加标题
+      const fullContent = `${article.title}\n\n${content}`
+
+      await navigator.clipboard.writeText(fullContent)
+      alert('✅ 内容已复制到剪贴板！\n\n请打开小红书网页版或APP粘贴发布。')
     } catch (error) {
-      console.error('发布失败:', error)
-      alert('❌ 发布失败：' + (error instanceof Error ? error.message : '网络错误'))
-    } finally {
-      setPublishingId(null)
-      setPublishingPlatform(null)
+      console.error('复制失败:', error)
+      alert('❌ 复制失败：' + (error instanceof Error ? error.message : '未知错误'))
     }
   }
 
@@ -326,8 +335,20 @@ export default function PublishManagementPage() {
     setTwitterError(null)
 
     try {
+      // 获取AI配置
+      const { getAiApiConfig } = await import('@/lib/api-config')
+      const aiConfig = getAiApiConfig()
+
       const response = await fetch(`/api/articles/${article.id}/rewrite-twitter`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model
+        }),
       })
       const data = await response.json()
 
@@ -343,6 +364,7 @@ export default function PublishManagementPage() {
       setTwitterLoading(false)
     }
   }
+
 
   // 重写（再次调用）
   const handleRetryTwitter = () => {
@@ -369,6 +391,204 @@ export default function PublishManagementPage() {
       setTwitterLoading(false)
     }
   }, [twitterDialogOpen])
+
+  // 改写为小红书文案
+  const handleRewriteXiaohongshu = async (article: Article) => {
+    setXhsArticle(article)
+    setXhsDialogOpen(true)
+    setXhsLoading(true)
+    setXhsError(null)
+
+    try {
+      // 获取AI配置
+      const { getAiApiConfig } = await import('@/lib/api-config')
+      const aiConfig = getAiApiConfig()
+
+      const response = await fetch(`/api/articles/${article.id}/rewrite-xiaohongshu`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model
+        }),
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setXhsContent(data.data.content)
+      } else {
+        setXhsError(data.error || '改写失败，请稍后重试')
+      }
+    } catch (error) {
+      console.error('改写小红书文案失败:', error)
+      setXhsError(error instanceof Error ? error.message : '改写失败，请稍后重试')
+    } finally {
+      setXhsLoading(false)
+    }
+  }
+
+  // 重写小红书文案
+  const handleRetryXiaohongshu = () => {
+    if (!xhsArticle) return
+    void handleRewriteXiaohongshu(xhsArticle)
+  }
+
+  // 复制小红书文案
+  const handleCopyXiaohongshu = async () => {
+    if (!xhsContent) return
+    try {
+      await navigator.clipboard.writeText(xhsContent)
+      alert('已复制到剪贴板')
+    } catch (error) {
+      console.error('复制失败:', error)
+      alert('复制失败，请手动复制')
+    }
+  }
+
+  // 保存小红书文案为新文章
+  const handleSaveXiaohongshu = async () => {
+    if (!xhsContent || !xhsArticle) return
+    setXhsSaving(true)
+    try {
+      // 提取标题（第一行）
+      const lines = xhsContent.split('\n')
+      const title = lines[0].replace(/^[📕🔥💡✨🎯🌟📌🎉]+\s*/, '').trim() || `${xhsArticle.title}（小红书版）`
+
+      const response = await fetch('/api/articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content: xhsContent,
+          summary: `改写自：${xhsArticle.title}`,
+          platform: 'xiaohongshu',
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        alert('✅ 已保存到文章库')
+        setXhsDialogOpen(false)
+        loadArticles() // 刷新列表
+      } else {
+        alert('❌ 保存失败：' + (data.error || '未知错误'))
+      }
+    } catch (error) {
+      console.error('保存失败:', error)
+      alert('❌ 保存失败')
+    } finally {
+      setXhsSaving(false)
+    }
+  }
+
+  // 关闭小红书弹窗时重置状态
+  useEffect(() => {
+    if (!xhsDialogOpen) {
+      setXhsError(null)
+      setXhsLoading(false)
+    }
+  }, [xhsDialogOpen])
+
+  // 改写为短视频脚本
+  const handleRewriteVideoScript = async (article: Article) => {
+    setVideoArticle(article)
+    setVideoDialogOpen(true)
+    setVideoLoading(true)
+    setVideoError(null)
+
+    try {
+      // 获取AI配置
+      const { getAiApiConfig } = await import('@/lib/api-config')
+      const aiConfig = getAiApiConfig()
+
+      const response = await fetch(`/api/articles/${article.id}/rewrite-video-script`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          aiApiUrl: aiConfig.apiUrl,
+          aiApiKey: aiConfig.apiKey,
+          aiModel: aiConfig.model
+        }),
+      })
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setVideoContent(data.data.content)
+      } else {
+        setVideoError(data.error || '改写失败，请稍后重试')
+      }
+    } catch (error) {
+      console.error('改写短视频脚本失败:', error)
+      setVideoError(error instanceof Error ? error.message : '改写失败，请稍后重试')
+    } finally {
+      setVideoLoading(false)
+    }
+  }
+
+  // 重写短视频脚本
+  const handleRetryVideoScript = () => {
+    if (!videoArticle) return
+    void handleRewriteVideoScript(videoArticle)
+  }
+
+  // 复制短视频脚本
+  const handleCopyVideoScript = async () => {
+    if (!videoContent) return
+    try {
+      await navigator.clipboard.writeText(videoContent)
+      alert('已复制到剪贴板')
+    } catch (error) {
+      console.error('复制失败:', error)
+      alert('复制失败，请手动复制')
+    }
+  }
+
+  // 保存短视频脚本为新文章
+  const handleSaveVideoScript = async () => {
+    if (!videoContent || !videoArticle) return
+    setVideoSaving(true)
+    try {
+      const response = await fetch('/api/articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `${videoArticle.title}（短视频脚本）`,
+          content: videoContent,
+          summary: `改写自：${videoArticle.title}`,
+          platform: 'video',
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        alert('✅ 已保存到文章库')
+        setVideoDialogOpen(false)
+        loadArticles() // 刷新列表
+      } else {
+        alert('❌ 保存失败：' + (data.error || '未知错误'))
+      }
+    } catch (error) {
+      console.error('保存失败:', error)
+      alert('❌ 保存失败')
+    } finally {
+      setVideoSaving(false)
+    }
+  }
+
+  // 关闭短视频弹窗时重置状态
+  useEffect(() => {
+    if (!videoDialogOpen) {
+      setVideoError(null)
+      setVideoLoading(false)
+    }
+  }, [videoDialogOpen])
 
   // 打开状态修改对话框
   const handleOpenStatusDialog = (article: Article) => {
@@ -484,16 +704,17 @@ export default function PublishManagementPage() {
                 <TableRow>
                   <TableHead className="w-[50px]">ID</TableHead>
                   <TableHead>标题</TableHead>
-                  <TableHead className="w-[120px]">状态</TableHead>
-                  <TableHead className="w-[140px]">创建时间</TableHead>
-                  <TableHead className="w-[140px]">更新时间</TableHead>
+                  <TableHead className="w-[80px]">平台</TableHead>
+                  <TableHead className="w-[100px]">状态</TableHead>
+                  <TableHead className="w-[130px]">创建时间</TableHead>
+                  <TableHead className="w-[130px]">更新时间</TableHead>
                   <TableHead className="w-[100px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredArticles.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground h-32">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground h-32">
                       {loading ? '加载中...' : '暂无文章'}
                     </TableCell>
                   </TableRow>
@@ -509,6 +730,16 @@ export default function PublishManagementPage() {
                           <div className="text-xs text-muted-foreground mt-1 truncate max-w-[400px]">
                             {article.summary}
                           </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {article.platform && PLATFORM_CONFIG[article.platform as Exclude<PlatformFilter, "all">] ? (
+                          <span className="flex items-center gap-1 text-sm">
+                            <span>{PLATFORM_CONFIG[article.platform as Exclude<PlatformFilter, "all">].icon}</span>
+                            <span className="text-muted-foreground">{PLATFORM_CONFIG[article.platform as Exclude<PlatformFilter, "all">].name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -580,18 +811,18 @@ export default function PublishManagementPage() {
                                 )}
                                 <DropdownMenuItem
                                   className="text-orange-600"
-                                  onClick={() => handlePublishToXiaohongshu(article.id)}
-                                  disabled={publishingId !== null}
+                                  onClick={() => handleRewriteXiaohongshu(article)}
+                                  disabled={xhsLoading}
                                 >
-                                  {publishingId === article.id && publishingPlatform === 'xiaohongshu' ? (
+                                  {xhsLoading && xhsArticle?.id === article.id ? (
                                     <>
                                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      发布中...
+                                      改写中...
                                     </>
                                   ) : (
                                     <>
                                       <Share2 className="mr-2 h-4 w-4" />
-                                      发布到小红书
+                                      改写成小红书文案
                                     </>
                                   )}
                                 </DropdownMenuItem>
@@ -611,6 +842,23 @@ export default function PublishManagementPage() {
                                 <>
                                   <Share2 className="mr-2 h-4 w-4" />
                                   改写成推特文案
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-purple-600"
+                              onClick={() => handleRewriteVideoScript(article)}
+                              disabled={videoLoading}
+                            >
+                              {videoLoading && videoArticle?.id === article.id ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  改写中...
+                                </>
+                              ) : (
+                                <>
+                                  <Share2 className="mr-2 h-4 w-4" />
+                                  改写成短视频脚本
                                 </>
                               )}
                             </DropdownMenuItem>
@@ -744,6 +992,170 @@ export default function PublishManagementPage() {
               <Button
                 onClick={handleCopyTwitter}
                 disabled={!twitterContent || twitterLoading}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                复制
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 小红书文案预览 */}
+      <Dialog open={xhsDialogOpen} onOpenChange={setXhsDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>小红书文案改写</DialogTitle>
+            <DialogDescription>
+              {xhsArticle ? `基于文章《${xhsArticle.title}》` : '改写后的小红书文案'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 py-2">
+            {xhsLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm p-4 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                正在智能改写中，请稍候...
+              </div>
+            )}
+            {xhsError && !xhsLoading && (
+              <div className="text-destructive text-sm p-2 flex items-center justify-center bg-red-50 rounded-md">
+                <span className="mr-2">❌</span> {xhsError}
+              </div>
+            )}
+            {!xhsLoading && !xhsError && (
+              <Textarea
+                value={xhsContent}
+                onChange={(e) => setXhsContent(e.target.value)}
+                placeholder="生成的内容将显示在这里..."
+                className="min-h-[300px] resize-none font-sans"
+              />
+            )}
+            <div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded">
+              <p>💡 提示：改写结果包含标题、正文和话题标签。您可以直接手动修改内容。</p>
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mt-2 pt-2 border-t">
+            <Button
+              variant="secondary"
+              onClick={handleSaveXiaohongshu}
+              disabled={xhsSaving || !xhsContent || xhsLoading}
+              className="sm:w-auto"
+            >
+              {xhsSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  保存中...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  保存到文章库
+                </>
+              )}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRetryXiaohongshu}
+                disabled={xhsLoading || !xhsArticle}
+              >
+                {xhsLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    重写中
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    重写
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleCopyXiaohongshu}
+                disabled={!xhsContent || xhsLoading}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                复制
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 短视频脚本预览 */}
+      <Dialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>短视频脚本改写</DialogTitle>
+            <DialogDescription>
+              {videoArticle ? `基于文章《${videoArticle.title}》` : '改写后的视频脚本'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 py-2">
+            {videoLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm p-4 justify-center">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                正在生成口播脚本，请稍候...
+              </div>
+            )}
+            {videoError && !videoLoading && (
+              <div className="text-destructive text-sm p-2 flex items-center justify-center bg-red-50 rounded-md">
+                <span className="mr-2">❌</span> {videoError}
+              </div>
+            )}
+            {!videoLoading && !videoError && (
+              <Textarea
+                value={videoContent}
+                onChange={(e) => setVideoContent(e.target.value)}
+                placeholder="生成的脚本将显示在这里..."
+                className="min-h-[300px] resize-none font-sans"
+              />
+            )}
+            <div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded">
+              <p>💡 提示：脚本包含口播文案和画面建议，适合60-90秒视频。</p>
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mt-2 pt-2 border-t">
+            <Button
+              variant="secondary"
+              onClick={handleSaveVideoScript}
+              disabled={videoSaving || !videoContent || videoLoading}
+              className="sm:w-auto"
+            >
+              {videoSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  保存中...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  保存到文章库
+                </>
+              )}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRetryVideoScript}
+                disabled={videoLoading || !videoArticle}
+              >
+                {videoLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    重写中
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    重写
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleCopyVideoScript}
+                disabled={!videoContent || videoLoading}
               >
                 <Copy className="mr-2 h-4 w-4" />
                 复制

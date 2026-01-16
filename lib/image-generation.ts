@@ -109,8 +109,12 @@ export async function generateImageWithSiliconFlow(options: GenerateImageOptions
     }
 
     const data = await response.json();
-    if (data.data && data.data.length > 0) {
-        return data.data[0].url;
+
+    // SiliconFlow API returns images in 'images' array (new format) or 'data' array (old format)
+    const images = data.images || data.data;
+
+    if (images && images.length > 0) {
+        return images[0].url;
     }
 
     throw new Error('SiliconFlow未返回图片URL');

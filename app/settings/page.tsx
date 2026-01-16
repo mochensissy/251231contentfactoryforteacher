@@ -1215,45 +1215,40 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* 小红书发布配置 */}
+          {/* 小红书和推特说明 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                📕 小红书发布配置
+                📕 小红书 & 🐦 推特发布说明
               </CardTitle>
               <CardDescription>
-                配置小红书发布API密钥，实现一键发布功能
+                这两个平台使用复制粘贴方式发布，无需配置API
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="xiaohongshu-api-url">API地址</Label>
-                <Input
-                  id="xiaohongshu-api-url"
-                  placeholder="https://note.limyai.com/api/openapi/publish_note"
-                  defaultValue="https://note.limyai.com/api/openapi/publish_note"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="xiaohongshu-api-key">API Key</Label>
-                <Input
-                  id="xiaohongshu-api-key"
-                  type="password"
-                  placeholder="xhs_..."
-                  value={xhsApiKey}
-                  onChange={(e) => setXhsApiKey(e.target.value)}
-                />
-                <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-3 mt-2">
-                  <p className="text-sm text-red-900 dark:text-red-100">
-                    📌 获取API密钥步骤：
-                  </p>
-                  <ol className="list-decimal list-inside text-sm text-red-700 dark:text-red-300 mt-1 space-y-1">
-                    <li>访问 <a href="https://note.limyai.com/dashboard/open/publish_note" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">note.limyai.com</a></li>
-                    <li>使用激活码 <code className="bg-red-100 dark:bg-red-900 px-1 py-0.5 rounded font-mono">H64Q4VRD</code> 注册</li>
-                    <li>复制API密钥填写到此处</li>
-                  </ol>
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
+                <p className="text-sm text-blue-900 dark:text-blue-100 font-medium">
+                  💡 发布流程说明：
+                </p>
+                <div className="space-y-2 text-sm text-blue-700 dark:text-blue-300">
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold">📕 小红书：</span>
+                    <span>在内容创作页面点击"一键复制"，然后打开小红书网页版或APP粘贴发布。</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold">🐦 推特：</span>
+                    <span>在内容创作页面点击"一键复制"，然后打开推特网页版或APP粘贴发布。</span>
+                  </div>
                 </div>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p>这种方式的优点：</p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>无需配置API密钥</li>
+                  <li>免费使用，无任何费用</li>
+                  <li>可以在发布前进行最后检查和修改</li>
+                  <li>支持在任何设备上操作</li>
+                </ul>
               </div>
             </CardContent>
           </Card>

@@ -7,38 +7,69 @@ interface XiaohongshuPreviewProps {
     className?: string
 }
 
-export function XiaohongshuPreview({ content, className }: XiaohongshuPreviewProps) {
-    // 解析内容，提取标题、正文和话题标签
-    const lines = content.split('\n').filter(line => line.trim())
-
-    // 尝试提取标题（通常是第一行）
+// 将 Markdown 转换为小红书格式的纯文本（移除 Markdown 标记，保留格式化）
+function parseMarkdownToText(markdown: string): {
+    title: string
+    body: string
+    hashtags: string[]
+} {
+    const lines = markdown.split('\n')
     let title = ''
-    let bodyLines: string[] = []
-    let hashtags: string[] = []
+    const bodyLines: string[] = []
+    const hashtags: string[] = []
 
     for (const line of lines) {
-        // 提取话题标签
-        const tagMatches = line.match(/#[^\s#]+/g)
+        const trimmedLine = line.trim()
+        if (!trimmedLine) continue
+
+        // 提取话题标签行
+        const tagMatches = trimmedLine.match(/#[^\s#]+/g)
         if (tagMatches && tagMatches.length >= 3) {
-            hashtags = tagMatches
+            hashtags.push(...tagMatches)
             continue
         }
 
-        // 第一个非空行作为标题
-        if (!title && !line.startsWith('#')) {
-            title = line.replace(/^[📕🔥💡✨🎯]+\s*/, '') // 移除开头emoji
-        } else if (title) {
-            bodyLines.push(line)
+        // 处理标题（Markdown H1/H2）
+        if (!title && (trimmedLine.startsWith('# ') || trimmedLine.startsWith('## '))) {
+            title = trimmedLine.replace(/^#{1,2}\s+/, '').replace(/^[📕🔥💡✨🎯🌟📌🎉]+\s*/, '')
+            continue
         }
+
+        // 如果还没有标题，且这是第一个非空行，作为标题
+        if (!title && !line.startsWith('#')) {
+            title = trimmedLine.replace(/^[📕🔥💡✨🎯🌟📌🎉]+\s*/, '').replace(/\*\*/g, '')
+            continue
+        }
+
+        bodyLines.push(trimmedLine)
     }
 
-    // 如果没有找到标题，使用第一行
-    if (!title && lines.length > 0) {
-        title = lines[0]
-        bodyLines = lines.slice(1)
-    }
+    // 处理正文：移除 Markdown 语法
+    const processedBody = bodyLines
+        .map(line => {
+            return line
+                // 移除 Markdown 标题标记
+                .replace(/^#{1,6}\s+/, '')
+                // 移除图片语法
+                .replace(/!\[.*?\]\(.*?\)/g, '')
+                // 移除链接语法，保留文字
+                .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+                // 移除加粗语法，保留文字
+                .replace(/\*\*(.*?)\*\*/g, '$1')
+                // 移除斜体语法，保留文字
+                .replace(/\*(.*?)\*/g, '$1')
+                // 移除行内代码
+                .replace(/`([^`]+)`/g, '$1')
+                // 移除笔记内容标记（如 **笔记内容：**）
+                .replace(/^\*\*.*?[：:]\s*\*\*\s*/, '')
+        })
+        .join('\n\n')
 
-    const bodyContent = bodyLines.join('\n')
+    return { title, body: processedBody, hashtags }
+}
+
+export function XiaohongshuPreview({ content, className }: XiaohongshuPreviewProps) {
+    const { title, body, hashtags } = parseMarkdownToText(content)
 
     return (
         <div className={cn("bg-white rounded-xl shadow-lg overflow-hidden max-w-[375px] mx-auto", className)}>
@@ -67,9 +98,13 @@ export function XiaohongshuPreview({ content, className }: XiaohongshuPreviewPro
                     {title || '笔记标题'}
                 </h2>
 
-                {/* 正文 */}
-                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {bodyContent || content}
+                {/* 正文 - 渲染格式化后的内容 */}
+                <div className="text-sm text-gray-700 leading-relaxed">
+                    {body.split('\n\n').map((paragraph, index) => (
+                        <p key={index} className="mb-2 last:mb-0">
+                            {paragraph}
+                        </p>
+                    ))}
                 </div>
 
                 {/* 话题标签 */}
@@ -107,3 +142,4 @@ export function XiaohongshuPreview({ content, className }: XiaohongshuPreviewPro
         </div>
     )
 }
+

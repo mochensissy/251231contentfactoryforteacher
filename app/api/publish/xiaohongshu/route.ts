@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
 
 interface PublishRequest {
-    title: string
-    content: string
-    coverImage: string
+    articleId?: number
+    title?: string
+    content?: string
+    coverImage?: string
     images?: string[]
     tags?: string[]
     apiConfig: {
@@ -16,7 +18,8 @@ interface PublishRequest {
 export async function POST(request: NextRequest) {
     try {
         const body: PublishRequest = await request.json()
-        const { title, content, coverImage, images = [], tags = [], apiConfig } = body
+        const { articleId, apiConfig } = body
+        let { title, content, coverImage, images = [], tags = [] } = body
 
         // 验证API配置
         if (!apiConfig?.apiKey) {
@@ -24,6 +27,81 @@ export async function POST(request: NextRequest) {
                 { success: false, error: '小红书API密钥未配置，请在设置中配置' },
                 { status: 400 }
             )
+        }
+
+        // 如果提供了 articleId，从数据库获取文章
+        if (articleId) {
+            const article = await prisma.article.findUnique({
+                where: { id: articleId },
+            })
+
+            if (!article) {
+                return NextResponse.json(
+                    { success: false, error: '文章不存在' },
+                    { status: 404 }
+                )
+            }
+
+            // 使用数据库中的文章数据
+            title = article.title
+            content = transformContentForXiaohongshu(article.content)
+
+            // 解析文章中的图片
+            if (article.images) {
+                try {
+                    const parsedImages = JSON.parse(article.images)
+                    if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+                        images = parsedImages
+                        // 使用第一张图作为封面（如果没有明确指定封面）
+                        if (!coverImage) {
+                            coverImage = parsedImages[0]
+                        }
+                    }
+                } catch (e) {
+                    console.warn('解析文章图片失败:', e)
+                }
+            }
+
+            // 如果还没有封面，尝试从内容中提取
+            if (!coverImage) {
+                const imageMatch = article.content.match(/!\[.*?\]\((.*?)\)/)
+                if (imageMatch) {
+                    coverImage = imageMatch[1]
+                    // 排除 placeholder 和 svg 图片，强制触发AI生成
+                    if (coverImage.includes('placehold.co') || coverImage.endsWith('.svg')) {
+                        coverImage = ''
+                    }
+                }
+            }
+
+            // 如果仍然没有封面图，尝试使用硅基流动自动生成
+            if (!coverImage) {
+                const siliconFlowKey = process.env.SILICONFLOW_API_KEY
+
+                if (siliconFlowKey) {
+                    try {
+                        console.log('🎨 没有找到封面图，尝试使用硅基流动自动生成...')
+                        const { generateImageWithSiliconFlow } = await import('@/lib/image-generation')
+
+                        const prompt = `封面图，${article.title}，${article.summary || ''}，小红书风格，高质量，细节丰富，4k`
+
+                        coverImage = await generateImageWithSiliconFlow({
+                            apiKey: siliconFlowKey,
+                            prompt,
+                            width: 1024,
+                            height: 1024, // 小红书使用正方形封面
+                            model: process.env.SILICONFLOW_MODEL || undefined
+                        })
+
+                        console.log('✅ 封面图自动生成成功:', coverImage)
+                    } catch (genError) {
+                        console.warn('⚠️ 硅基流动生成封面失败:', genError)
+                        // 继续执行，下面会检查是否为空并报错
+                    }
+                } else {
+                    console.warn('⚠️ 硅基流动API Key未配置，无法自动生成封面')
+                }
+            }
         }
 
         // 验证必填参数
@@ -144,3 +222,28 @@ export async function POST(request: NextRequest) {
         )
     }
 }
+
+/**
+ * 将Markdown格式的文章内容转换为小红书适合的纯文本格式
+ * - 移除Markdown标记（#标题、**强调**等）
+ * - 保留段落结构
+ * - 添加适合小红书的emoji和排版
+ */
+function transformContentForXiaohongshu(markdown: string): string {
+    let text = markdown
+        // 移除标题标记，保留文字
+        .replace(/^#{1,6}\s+/gm, '')
+        // 将 **粗体** 转换为普通文本（或可以保留特殊标记）
+        .replace(/\*\*(.*?)\*\*/g, '💡$1')
+        // 移除图片标记
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        // 移除链接，保留文字
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        // 清理多余的空行（保留段落间的单个空行）
+        .replace(/\n\n+/g, '\n\n')
+        // 移除首尾空白
+        .trim()
+
+    return text
+}
+
