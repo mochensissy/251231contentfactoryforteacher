@@ -346,6 +346,45 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
+  // 清除所有API密钥（只清除Key，保留URL）
+  const handleClearApiKeys = () => {
+    if (!confirm('确定要清除所有API密钥吗？\n\n这将清除您保存在此浏览器中的所有API Key配置。\nAPI地址(URL)将被保留，您需要重新填写API密钥才能使用相关功能。')) {
+      return
+    }
+
+    // 清除AI API密钥
+    setAiApiKey('')
+    saveAiApiConfig({ apiUrl: aiApiUrl, apiKey: '', model: useCustomModel ? customModelId : selectedAiModel })
+
+    // 清除公众号文章API密钥
+    setWechatArticleApiKey('')
+    saveWechatArticleApiConfig({ apiUrl: wechatArticleApiUrl, apiKey: '' })
+
+    // 清除硅基流动API密钥
+    setSiliconflowApiKey('')
+    saveImageApiConfig({
+      siliconflow: { apiUrl: siliconflowApiUrl, apiKey: '', model: siliconflowModel },
+      dashscope: { apiUrl: dashscopeApiUrl, apiKey: '' },
+    })
+
+    // 清除阿里云DashScope API密钥
+    setDashscopeApiKey('')
+
+    // 清除小红书API密钥
+    setXhsApiKey('')
+    saveXiaohongshuApiConfig({ apiUrl: xhsApiUrl, apiKey: '' })
+
+    // 清除公众号配置中的AppSecret
+    const clearedAccounts = wechatAccounts.map(account => ({
+      ...account,
+      appSecret: ''
+    }))
+    setWechatAccounts(clearedAccounts)
+    saveAccountsToStorage(clearedAccounts)
+
+    alert('✅ 所有API密钥已清除！请重新填写您的API密钥。')
+  }
+
 
   // 获取服务器IP地址
   const getServerIp = async () => {
@@ -1681,7 +1720,10 @@ export default function SettingsPage() {
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">重置</Button>
+          <Button variant="outline" onClick={handleClearApiKeys} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+            <Trash2 className="mr-2 h-4 w-4" />
+            清除API密钥
+          </Button>
           <Button onClick={handleSave}>
             <Save className="mr-2 h-4 w-4" />
             {saved ? "已保存" : "保存设置"}
