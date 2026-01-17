@@ -161,6 +161,8 @@ export interface ImageApiConfig {
         apiUrl: string
         apiKey: string
     }
+    // 公众号封面图使用的模型提供商，默认使用免费的siliconflow
+    coverModelProvider: 'siliconflow' | 'dashscope'
 }
 
 const IMAGE_API_KEY = 'image-api-config'
@@ -170,6 +172,7 @@ export function getImageApiConfig(): ImageApiConfig {
     const defaults: ImageApiConfig = {
         siliconflow: { apiUrl: '', apiKey: '', model: '' },
         dashscope: { apiUrl: '', apiKey: '' },
+        coverModelProvider: 'siliconflow', // 默认使用免费的硅基流动
     }
 
     if (typeof window === 'undefined') {

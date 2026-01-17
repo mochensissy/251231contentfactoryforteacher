@@ -100,6 +100,9 @@ export default function SettingsPage() {
   const [dashscopeApiUrl, setDashscopeApiUrl] = useState('')
   const [dashscopeApiKey, setDashscopeApiKey] = useState('')
 
+  // 公众号封面图模型选择（默认免费的硅基流动）
+  const [coverModelProvider, setCoverModelProvider] = useState<'siliconflow' | 'dashscope'>('siliconflow')
+
   // 小红书配置状态
   const [xhsApiUrl, setXhsApiUrl] = useState('')
   const [xhsApiKey, setXhsApiKey] = useState('')
@@ -248,6 +251,10 @@ export default function SettingsPage() {
       setDashscopeApiUrl(imageConfig.dashscope.apiUrl || '')
       setDashscopeApiKey(imageConfig.dashscope.apiKey || '')
     }
+    // 加载封面图模型选择，默认为免费的硅基流动
+    if (imageConfig.coverModelProvider) {
+      setCoverModelProvider(imageConfig.coverModelProvider)
+    }
 
     // 小红书API配置
     const xhsConfig = getXiaohongshuApiConfig()
@@ -337,6 +344,7 @@ export default function SettingsPage() {
     saveImageApiConfig({
       siliconflow: { apiUrl: siliconflowApiUrl, apiKey: siliconflowApiKey, model: siliconflowModel },
       dashscope: { apiUrl: dashscopeApiUrl, apiKey: dashscopeApiKey },
+      coverModelProvider, // 保存用户选择的封面图模型
     })
 
     // 保存小红书发布API配置
@@ -967,105 +975,141 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-
+          {/* 图片生成配置 - 合并为一个卡片 */}
           <Card>
             <CardHeader>
-              <CardTitle>硅基流动 - 文章配图生成</CardTitle>
+              <CardTitle>🖼️ 图片生成配置</CardTitle>
               <CardDescription>
-                配置硅基流动可灵模型API用于生成文章配图
+                配置AI图片生成API，用于文章配图和公众号封面
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="siliconflow-api-url">API地址</Label>
-                <Input
-                  id="siliconflow-api-url"
-                  placeholder="https://api.siliconflow.cn/v1/images/generations"
-                  value={siliconflowApiUrl}
-                  onChange={(e) => setSiliconflowApiUrl(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="siliconflow-api-key">API Key</Label>
-                <Input
-                  id="siliconflow-api-key"
-                  type="password"
-                  placeholder="sk-..."
-                  value={siliconflowApiKey}
-                  onChange={(e) => setSiliconflowApiKey(e.target.value)}
-                />
-                <p className="text-sm text-muted-foreground">
-                  从 <a href="https://cloud.siliconflow.cn" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">硅基流动</a> 获取
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="siliconflow-model">模型</Label>
-                <Input
-                  id="siliconflow-model"
-                  placeholder="Kwai-Kolors/Kolors"
-                  value={siliconflowModel}
-                  onChange={(e) => setSiliconflowModel(e.target.value)}
-                />
+            <CardContent className="space-y-6">
+              {/* 硅基流动配置 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🆓</span>
+                  <span className="font-medium">硅基流动</span>
+                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">免费 · 必填</span>
+                  {siliconflowApiKey && (
+                    <span className="text-xs bg-green-500 text-white px-1.5 py-0.5 rounded">✓ 已配置</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="siliconflow-api-url">API地址</Label>
+                    <Input
+                      id="siliconflow-api-url"
+                      placeholder="https://api.siliconflow.cn/v1/images/generations"
+                      value={siliconflowApiUrl}
+                      onChange={(e) => setSiliconflowApiUrl(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="siliconflow-model">模型</Label>
+                    <Input
+                      id="siliconflow-model"
+                      placeholder="Kwai-Kolors/Kolors"
+                      value={siliconflowModel}
+                      onChange={(e) => setSiliconflowModel(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="siliconflow-api-key">API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="siliconflow-api-key"
+                      type="password"
+                      placeholder="sk-..."
+                      value={siliconflowApiKey}
+                      onChange={(e) => setSiliconflowApiKey(e.target.value)}
+                      className="flex-1"
+                    />
+                    {renderTestButton(siliconflowTestStatus, testSiliconflowConnection)}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    从 <a href="https://cloud.siliconflow.cn" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">硅基流动</a> 获取
+                  </p>
+                </div>
               </div>
 
               <Separator />
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">连接测试</p>
+              {/* 阿里云配置 */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">💎</span>
+                  <span className="font-medium">阿里云通义万相</span>
+                  <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">~¥0.5/张 · 可选</span>
+                  {dashscopeApiKey && (
+                    <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">✓ 已配置</span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dashscope-api-url">API地址</Label>
+                  <Input
+                    id="dashscope-api-url"
+                    placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
+                    value={dashscopeApiUrl}
+                    onChange={(e) => setDashscopeApiUrl(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dashscope-api-key">API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="dashscope-api-key"
+                      type="password"
+                      placeholder="sk-..."
+                      value={dashscopeApiKey}
+                      onChange={(e) => setDashscopeApiKey(e.target.value)}
+                      className="flex-1"
+                    />
+                    {renderTestButton(dashscopeTestStatus, testDashscopeConnection)}
+                  </div>
                   <p className="text-sm text-muted-foreground">
-                    验证API配置是否正确
+                    从 <a href="https://dashscope.console.aliyun.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">阿里云DashScope控制台</a> 获取
                   </p>
                 </div>
-                {renderTestButton(siliconflowTestStatus, testSiliconflowConnection)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>阿里云通义万相 - 公众号封面图生成</CardTitle>
-              <CardDescription>
-                配置阿里云DashScope API用于生成公众号封面图
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="dashscope-api-url">API地址</Label>
-                <Input
-                  id="dashscope-api-url"
-                  placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
-                  value={dashscopeApiUrl}
-                  onChange={(e) => setDashscopeApiUrl(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="dashscope-api-key">API Key</Label>
-                <Input
-                  id="dashscope-api-key"
-                  type="password"
-                  placeholder="sk-..."
-                  value={dashscopeApiKey}
-                  onChange={(e) => setDashscopeApiKey(e.target.value)}
-                />
-                <p className="text-sm text-muted-foreground">
-                  从 <a href="https://dashscope.console.aliyun.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">阿里云DashScope控制台</a> 获取
-                </p>
               </div>
 
               <Separator />
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">连接测试</p>
-                  <p className="text-sm text-muted-foreground">
-                    验证API配置是否正确
-                  </p>
+              {/* 公众号封面模型选择 */}
+              <div className="space-y-3">
+                <Label>公众号封面使用</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCoverModelProvider('siliconflow')}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${coverModelProvider === 'siliconflow'
+                        ? 'border-green-500 bg-green-50 dark:bg-green-950'
+                        : 'border-input hover:border-primary/50'
+                      }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>🆓 硅基流动</span>
+                      <span className="text-xs text-green-600">免费推荐</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoverModelProvider('dashscope')}
+                    disabled={!dashscopeApiKey}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${coverModelProvider === 'dashscope'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-input hover:border-primary/50'
+                      } ${!dashscopeApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>💎 阿里云</span>
+                      <span className="text-xs text-orange-600">画质更高</span>
+                    </div>
+                  </button>
                 </div>
-                {renderTestButton(dashscopeTestStatus, testDashscopeConnection)}
+                <p className="text-sm text-muted-foreground">
+                  💡 硅基流动为必填（免费），阿里云可选配置后使用
+                </p>
               </div>
             </CardContent>
           </Card>

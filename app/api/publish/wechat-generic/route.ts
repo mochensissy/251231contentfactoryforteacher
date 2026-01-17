@@ -133,29 +133,11 @@ export async function POST(request: NextRequest) {
                         // 使用 AI 排版生成的提示词，如果为空则回退到原来的逻辑
                         const prompt = formattedResult.prompt || `封面图，${article.title}，${article.summary || article.title}，高质量，细节丰富，4k`
 
-                        // 优先使用阿里云通义万相 (如果 keys 存在)
-                        if (dashscopeKey) {
-                            console.log('尝试使用阿里云生成封面...')
-                            try {
-                                targetCoverUrl = await generateImagewithDashscope({
-                                    apiKey: dashscopeKey,
-                                    prompt,
-                                    width: 1024,
-                                    height: 576,
-                                })
-                                generatedCoverUrl = targetCoverUrl
-                            } catch (e) {
-                                generationError = `阿里云生成失败: ${e instanceof Error ? e.message : String(e)}`
-                                // 如果阿里云失败，且有 SiliconFlow key，尝试 SiliconFlow
-                                if (!siliconFlowKey) {
-                                    console.warn('阿里云生成失败且无备用方案:', e)
-                                }
-                            }
-                        }
+                        // 根据用户选择的模型提供商调用对应API
+                        const selectedProvider = imageApiConfig?.coverModelProvider || 'siliconflow'
 
-                        // 如果没有封面(阿里云未配置或失败)，且有 SiliconFlow key，尝试 SiliconFlow
-                        if (!targetCoverUrl && siliconFlowKey) {
-                            console.log('尝试使用 SiliconFlow 生成封面...')
+                        if (selectedProvider === 'siliconflow' && siliconFlowKey) {
+                            console.log('使用 SiliconFlow（免费）生成封面...')
                             try {
                                 targetCoverUrl = await generateImageWithSiliconFlow({
                                     apiKey: siliconFlowKey,
@@ -167,12 +149,51 @@ export async function POST(request: NextRequest) {
                                 generatedCoverUrl = targetCoverUrl
                             } catch (e) {
                                 generationError = `SiliconFlow生成失败: ${e instanceof Error ? e.message : String(e)}`
-                                // 这里如果也失败了，就真的失败了
+                            }
+                        } else if (selectedProvider === 'dashscope' && dashscopeKey) {
+                            console.log('使用阿里云（收费）生成封面...')
+                            try {
+                                targetCoverUrl = await generateImagewithDashscope({
+                                    apiKey: dashscopeKey,
+                                    prompt,
+                                    width: 1024,
+                                    height: 576,
+                                })
+                                generatedCoverUrl = targetCoverUrl
+                            } catch (e) {
+                                generationError = `阿里云生成失败: ${e instanceof Error ? e.message : String(e)}`
+                            }
+                        } else if (siliconFlowKey) {
+                            // 如果选择的提供商无Key，回退到可用的提供商
+                            console.log('当前选择的提供商未配置Key，尝试使用 SiliconFlow...')
+                            try {
+                                targetCoverUrl = await generateImageWithSiliconFlow({
+                                    apiKey: siliconFlowKey,
+                                    prompt,
+                                    width: 1024,
+                                    height: 576,
+                                    model: imageApiConfig?.siliconflow?.model || undefined
+                                })
+                                generatedCoverUrl = targetCoverUrl
+                            } catch (e) {
+                                generationError = `SiliconFlow生成失败: ${e instanceof Error ? e.message : String(e)}`
+                            }
+                        } else if (dashscopeKey) {
+                            console.log('当前选择的提供商未配置Key，尝试使用阿里云...')
+                            try {
+                                targetCoverUrl = await generateImagewithDashscope({
+                                    apiKey: dashscopeKey,
+                                    prompt,
+                                    width: 1024,
+                                    height: 576,
+                                })
+                                generatedCoverUrl = targetCoverUrl
+                            } catch (e) {
+                                generationError = `阿里云生成失败: ${e instanceof Error ? e.message : String(e)}`
                             }
                         }
                     } catch (genError) {
                         console.warn('自动生成封面失败:', genError)
-                        // 继续执行，下面会检查是否为空
                     }
                 }
 

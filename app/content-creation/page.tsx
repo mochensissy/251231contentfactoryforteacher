@@ -568,52 +568,91 @@ export default function ContentCreationPage() {
 
       // 如果没有图片，自动生成一张作为封面
       if (!coverImage) {
-        // 检查DashScope/Tongyi配置
+        // 检查图片API配置
         const imageConfig = getImageApiConfig()
+        const selectedProvider = imageConfig.coverModelProvider || 'siliconflow'
 
-        // 如果没有配置API Key，询问用户是否继续（可能会失败）
-        if (!imageConfig.dashscope?.apiKey) {
-          const continueWithoutCover = confirm('未检测到配图且未配置阿里云DashScope API Key，发布可能会因为缺少封面图而失败。\n\n是否仍要继续尝试？')
-          if (!continueWithoutCover) {
-            setPublishingMap(prev => ({ ...prev, [account.id]: false }))
-            return
+        // 根据用户选择的模型提供商生成封面
+        if (selectedProvider === 'siliconflow') {
+          // 使用SiliconFlow（免费）
+          if (!imageConfig.siliconflow?.apiKey) {
+            const continueWithoutCover = confirm('未配置硅基流动API Key，发布需要封面图。\n\n请先在设置 → API配置中配置硅基流动密钥。\n\n是否仍要继续尝试？')
+            if (!continueWithoutCover) {
+              setPublishingMap(prev => ({ ...prev, [account.id]: false }))
+              return
+            }
+          } else {
+            try {
+              const promptSettings = getPromptSettings()
+              const coverPrompt = promptSettings.coverPrompt || `公众号封面，主题："${generatedTitle}"。要求：极简设计，明亮色调，单色背景，有现代感，中文大字标题。`
+
+              console.log('🖼️ 正在使用SiliconFlow（免费）生成公众号封面图...')
+
+              const imageResponse = await fetch('/api/image-generation/siliconflow', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  prompt: coverPrompt,
+                  imageSize: '1024x576', // 16:9 适合公众号
+                  numImages: 1,
+                  apiUrl: imageConfig.siliconflow.apiUrl,
+                  apiKey: imageConfig.siliconflow.apiKey,
+                  model: imageConfig.siliconflow.model || 'Kwai-Kolors/Kolors',
+                }),
+              })
+
+              const imageData = await imageResponse.json()
+              if (imageResponse.ok && imageData.success && imageData.data?.images?.length > 0) {
+                coverImage = imageData.data.images[0]
+                currentImages = [coverImage]
+                setGeneratedImages(currentImages)
+                console.log('✅ 封面图生成成功:', coverImage)
+              } else {
+                console.warn('SiliconFlow封面生成失败:', imageData.error)
+              }
+            } catch (genError) {
+              console.error('封面生成异常:', genError)
+            }
           }
         } else {
-          // 尝试自动生成封面
-          try {
-            const promptSettings = getPromptSettings()
-            const coverPrompt = promptSettings.coverPrompt || `公众号封面，主题："${generatedTitle}"。要求：极简设计，明亮色调，单色背景，有现代感，中文大字标题。`
-
-            // 更新UI提示
-            // 这里的 setPublishingMap 可能会导致UI重新渲染，但在try/catch块中应该没问题
-            // 更好的方式可能是加一个专门的 status state，但这里复用 publishingMap 只是 loading 状态
-
-            console.log('🖼️ 正在生成公众号封面图...')
-
-            const imageResponse = await fetch('/api/image-generation/dashscope', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                prompt: coverPrompt,
-                imageSize: '1024*576', // 16:9 适合公众号
-                numImages: 1,
-                apiUrl: imageConfig.dashscope.apiUrl,
-                apiKey: imageConfig.dashscope.apiKey,
-              }),
-            })
-
-            const imageData = await imageResponse.json()
-            if (imageResponse.ok && imageData.success && imageData.data?.images?.length > 0) {
-              coverImage = imageData.data.images[0]
-              currentImages = [coverImage]
-              setGeneratedImages(currentImages) // 更新前端显示的图片
-              console.log('✅ 封面图生成成功:', coverImage)
-            } else {
-              console.warn('封面生成失败:', imageData.error)
-              // 生成失败不阻断流程，让后端报错或尝试其他方式
+          // 使用DashScope（收费）
+          if (!imageConfig.dashscope?.apiKey) {
+            const continueWithoutCover = confirm('未配置阿里云DashScope API Key，发布需要封面图。\n\n请先在设置 → API配置中配置阿里云密钥。\n\n是否仍要继续尝试？')
+            if (!continueWithoutCover) {
+              setPublishingMap(prev => ({ ...prev, [account.id]: false }))
+              return
             }
-          } catch (genError) {
-            console.error('封面生成异常:', genError)
+          } else {
+            try {
+              const promptSettings = getPromptSettings()
+              const coverPrompt = promptSettings.coverPrompt || `公众号封面，主题："${generatedTitle}"。要求：极简设计，明亮色调，单色背景，有现代感，中文大字标题。`
+
+              console.log('🖼️ 正在使用阿里云（收费）生成公众号封面图...')
+
+              const imageResponse = await fetch('/api/image-generation/dashscope', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  prompt: coverPrompt,
+                  imageSize: '1024*576', // 16:9 适合公众号
+                  numImages: 1,
+                  apiUrl: imageConfig.dashscope.apiUrl,
+                  apiKey: imageConfig.dashscope.apiKey,
+                }),
+              })
+
+              const imageData = await imageResponse.json()
+              if (imageResponse.ok && imageData.success && imageData.data?.images?.length > 0) {
+                coverImage = imageData.data.images[0]
+                currentImages = [coverImage]
+                setGeneratedImages(currentImages)
+                console.log('✅ 封面图生成成功:', coverImage)
+              } else {
+                console.warn('封面生成失败:', imageData.error)
+              }
+            } catch (genError) {
+              console.error('封面生成异常:', genError)
+            }
           }
         }
       }
