@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { aiClient } from '@/lib/ai-client'
+import { aiClient, AIClient } from '@/lib/ai-client'
 
 // POST: 发布文章到指定的微信公众号（通用接口）
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json()
-        const { articleId, account, coverImage, imageApiConfig, coverPrompt } = body
+        const { articleId, account, coverImage, imageApiConfig, coverPrompt, aiApiConfig } = body
 
         if (!articleId || !account) {
             return NextResponse.json(
@@ -81,11 +81,20 @@ export async function POST(request: NextRequest) {
                 // ========== 新增步骤: AI排版处理 (还原老版本逻辑) ==========
                 console.log('\n🎨 正在进行AI排版处理...')
 
+                // 初始化 AI 客户端 (优先使用前端传递的配置)
+                const formattingClient = aiApiConfig?.apiKey
+                    ? new AIClient({
+                        apiUrl: aiApiConfig.apiUrl,
+                        apiKey: aiApiConfig.apiKey,
+                        model: aiApiConfig.model
+                    })
+                    : aiClient
+
                 const formattedResult = await formatArticleForWechatWithRetry({
                     title: article.title,
                     content: article.content,
                     coverPrompt, // 传入封面提示词设置
-                }, 2) // 最多重试2次
+                }, 2, formattingClient) // 最多重试2次
 
                 console.log('✅ 文章排版完成')
                 console.log('✅ 生成图片提示词:', formattedResult.prompt.substring(0, 50) + '...')
@@ -277,7 +286,8 @@ async function formatArticleForWechatWithRetry(
         content: string
         coverPrompt?: string
     },
-    maxRetries: number = 2
+    maxRetries: number = 2,
+    client: AIClient = aiClient
 ): Promise<{
     title: string
     html_content: string
@@ -294,7 +304,7 @@ async function formatArticleForWechatWithRetry(
                 await new Promise(resolve => setTimeout(resolve, delay))
             }
 
-            return await formatArticleForWechat(params)
+            return await formatArticleForWechat(params, client)
         } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error))
             console.error(`❌ 第 ${attempt} 次尝试失败:`, lastError.message)
@@ -323,7 +333,7 @@ async function formatArticleForWechat(params: {
     title: string
     content: string
     coverPrompt?: string
-}): Promise<{
+}, client: AIClient): Promise<{
     title: string
     html_content: string
     prompt: string
@@ -408,7 +418,7 @@ ${content}
 }`
 
     try {
-        const response = await aiClient.chat([
+        const response = await client.chat([
             {
                 role: 'user',
                 content: prompt,

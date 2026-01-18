@@ -56,7 +56,7 @@ import { useRouter } from "next/navigation"
 import { QRCodeDialog } from "@/components/qr-code-dialog"
 import { ArticlePreviewDialog } from "@/components/article-preview-dialog"
 import { getEnabledWechatAccounts, type WechatAccount } from "@/lib/wechat-accounts"
-import { getImageApiConfig, getPromptSettings } from "@/lib/api-config"
+import { getImageApiConfig, getPromptSettings, getAiApiConfig } from "@/lib/api-config"
 
 // 平台类型
 type PlatformFilter = "all" | "wechat" | "xiaohongshu" | "twitter"
@@ -195,6 +195,7 @@ export default function PublishManagementPage() {
             webhookUrl: account.webhookUrl,
           },
           imageApiConfig: getImageApiConfig(),
+          aiApiConfig: getAiApiConfig(), // 传递AI配置给服务器用于排版
           coverPrompt: getPromptSettings().coverPrompt,
         }),
       })

@@ -689,7 +689,8 @@ export default function ContentCreationPage() {
             appId: account.appId,
             appSecret: account.appSecret,
             webhookUrl: account.webhookUrl,
-          }
+          },
+          aiApiConfig: getAiApiConfig(), // 传递AI配置给服务器用于排版
         }),
       })
 
