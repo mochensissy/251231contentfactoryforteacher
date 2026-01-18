@@ -43,9 +43,21 @@ export async function PUT(
         }
 
         const body = await request.json()
+
+        // 处理 images 字段，如果是数组/对象则转换为 JSON 字符串
+        const updateData = { ...body }
+        if (updateData.images && typeof updateData.images !== 'string') {
+            updateData.images = JSON.stringify(updateData.images)
+        }
+
+        // 移除不应该更新的字段
+        delete updateData.id
+        delete updateData.createdAt
+        delete updateData.updatedAt
+
         const article = await prisma.article.update({
             where: { id },
-            data: body
+            data: updateData
         })
 
         return NextResponse.json({ success: true, data: article })
