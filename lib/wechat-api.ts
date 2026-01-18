@@ -2,15 +2,39 @@
 // 微信公众号 API 工具类
 // 用于直接调用微信官方接口，不依赖 webhook
 
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+// 微信公众号 API 工具类
+// 用于直接调用微信官方接口，不依赖 webhook
+
 export class WechatApiClient {
     private appId: string;
     private appSecret: string;
     private accessToken: string | null = null;
     private tokenExpiresAt: number = 0;
+    private proxyAgent: any = null; // HttpsProxyAgent definition
 
     constructor(appId: string, appSecret: string) {
         this.appId = appId;
         this.appSecret = appSecret;
+
+        // 初始化代理
+        const proxyUrl = process.env.WECHAT_PROXY_URL;
+        if (proxyUrl) {
+            console.log('🌐 WeChat API Client: Using Proxy', proxyUrl);
+            this.proxyAgent = new HttpsProxyAgent(proxyUrl);
+        }
+    }
+
+    /**
+     * 获取带有代理配置的 fetch options
+     */
+    private getFetchOptions(baseOptions: RequestInit = {}): RequestInit {
+        const options: any = { ...baseOptions };
+        if (this.proxyAgent) {
+            options.agent = this.proxyAgent;
+        }
+        return options;
     }
 
     /**
@@ -26,7 +50,8 @@ export class WechatApiClient {
 
         try {
             const url = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${this.appId}&secret=${this.appSecret}`;
-            const response = await fetch(url);
+            // @ts-ignore - Next.js/Node fetch supports agent
+            const response = await fetch(url, this.getFetchOptions());
             const data = await response.json();
 
             if (data.errcode) {
@@ -53,7 +78,9 @@ export class WechatApiClient {
         const url = `https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${token}&type=${type}`;
 
         try {
-            // 1. 下载图片
+            // 1. 下载图片 - 下载图片通常不需要走代理，或者也可以走
+            // 这里假设图片通常在国外(CDN)或国内都可以访问，为了稳定性也可以走代理，或者不走
+            // 鉴于图片可能来自各种源，我们暂时只给微信 API 走代理，下载图片使用默认 fetch
             const imageRes = await fetch(imageUrl);
             if (!imageRes.ok) throw new Error('无法下载图片资源');
             const blob = await imageRes.blob();
@@ -77,10 +104,11 @@ export class WechatApiClient {
             formData.append('media', blob, `cover.${extension}`);
 
             // 3. 上传到微信
-            const response = await fetch(url, {
+            // @ts-ignore
+            const response = await fetch(url, this.getFetchOptions({
                 method: 'POST',
                 body: formData,
-            });
+            }));
 
             const data = await response.json();
 
@@ -126,13 +154,14 @@ export class WechatApiClient {
         };
 
         try {
-            const response = await fetch(url, {
+            // @ts-ignore
+            const response = await fetch(url, this.getFetchOptions({
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
-            });
+            }));
 
             const data = await response.json();
 
