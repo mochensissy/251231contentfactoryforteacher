@@ -3,6 +3,7 @@
 // 用于直接调用微信官方接口，不依赖 webhook
 
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import fetch from 'node-fetch';
 
 // 微信公众号 API 工具类
 // 用于直接调用微信官方接口，不依赖 webhook
@@ -52,7 +53,7 @@ export class WechatApiClient {
             const url = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${this.appId}&secret=${this.appSecret}`;
             // @ts-ignore - Next.js/Node fetch supports agent
             const response = await fetch(url, this.getFetchOptions());
-            const data = await response.json();
+            const data = await response.json() as any;
 
             if (data.errcode) {
                 throw new Error(`获取 Access Token 失败: ${data.errmsg} (${data.errcode})`);
@@ -110,7 +111,7 @@ export class WechatApiClient {
                 body: formData,
             }));
 
-            const data = await response.json();
+            const data = await response.json() as any;
 
             if (data.errcode) {
                 throw new Error(`上传素材失败: ${data.errmsg} (${data.errcode})`);
@@ -163,7 +164,7 @@ export class WechatApiClient {
                 body: JSON.stringify(payload)
             }));
 
-            const data = await response.json();
+            const data = await response.json() as any;
 
             if (data.errcode) {
                 throw new Error(`新建草稿失败: ${data.errmsg} (${data.errcode})`);
